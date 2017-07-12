@@ -153,12 +153,19 @@ sex_exp_vs_total_chisq
 ```
 ```{r monti-carlo-simulation-analysis}
 
-stat_f <- get_stat_f('sex')
+stat_f <- get_stat_f("sex") # Returns a function that calculates the frequency 
+                            # of males
 sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, exp_df$male_prob, 
                    length(exp_df$id[exp_df$sex == 'M']) / nrow(exp_df), stat_f)
 sex_mce
-sex_exp_vs_total_rr <- calc_relative_risk(sex_exp_vs_total_m, alpha = 0.01)
+alpha <- 0.01
+sex_exp_vs_total_rr <- calc_relative_risk(sex_exp_vs_total_m, alpha = alpha)
 sex_exp_vs_total_rr
 
 ```
+The relative risk of a female versus a male of being diagnosed as having 
+histoplasmosis is `r round(sex_exp_vs_total_rr$RR, 2)` with a 
+`r round((1.0 - sex_exp_vs_total_rr$alpha) * 100.0, 0)` percent confidence of 
+`r signif(sex_exp_vs_total_rr$lowervalue, 3)` -- 
+`r signif(sex_exp_vs_total_rr$uppervalue, 3)`.
 
