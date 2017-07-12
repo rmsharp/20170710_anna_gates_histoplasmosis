@@ -81,33 +81,37 @@ melt_ctrl_df <- melt(ctrl_df_to_be_melted, id = c("id", "sex", "age"))
 
 
 percent_exp_animals_ever_in_corral <- 
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
                          melt_exp_df$variable == 'days_corral']) / 
   length(melt_exp_df$value[melt_exp_df$variable == 'days_corral'])
 percent_exp_animals_ever_in_gang <- 
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
                          melt_exp_df$variable == 'days_gang']) / 
   length(melt_exp_df$value[melt_exp_df$variable == 'days_gang'])
 percent_exp_animals_ever_single <-
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
                          melt_exp_df$variable == 'days_single']) / 
   length(melt_exp_df$value[melt_exp_df$variable == 'days_single'])
 
 percent_ctrl_animals_ever_in_corral <- 
-  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
                          melt_ctrl_df$variable == 'days_corral']) / 
   length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_corral'])
 percent_ctrl_animals_ever_in_gang <- 
-  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
                          melt_ctrl_df$variable == 'days_gang']) / 
   length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_gang'])
 percent_ctrl_animals_ever_single <-
-  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
                          melt_ctrl_df$variable == 'days_single']) / 
   length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_single'])
 
 
 ```
+One of the sources of histoplasmois infection is soil, which makes housing in 
+the corral a potential risk factor. However, there were 
+`r round(100.0 - percent_exp_animals_ever_in_corral, 0)` percent
+of the affected animals that had never been in the corral.
 ```{r sample-housing-data}
 library(knitr)
 caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted), 
@@ -118,7 +122,10 @@ caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted),
 knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 
 ```
+```{r get-housing-type-ratios}
+exp_df <- get_housing_type_ratios(conn, exp_df, housing_types, arc_species_code)
 
+```
 The contrast we want to look at now is whether or not there is a sex 
 difference among those animals being observed with histoplasmosis. 
 There are a few issues that should be considered.
