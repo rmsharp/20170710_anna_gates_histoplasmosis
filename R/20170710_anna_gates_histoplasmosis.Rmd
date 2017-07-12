@@ -1,0 +1,164 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(rmsutilityr, quietly = TRUE)
+library(grid, quietly = TRUE)
+library(animalr, quietly = TRUE)
+library(xtable, quietly = TRUE)
+library(RODBC, quietly = TRUE)
+library(ggplot2, quietly = TRUE)
+library(reshape2, quietly = TRUE)
+library(lubridate, quietly = TRUE)
+library(stringi, quietly = TRUE)
+suppressPackageStartupMessages(library(XLConnect, quietly = TRUE))
+
+library(histoplasmosisr, quietly = TRUE)
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r get-list-of-affected-animals}
+filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
+histo_data <- loadWorkbook(filename)
+arc_species_code = 'PC'
+conn <- odbcConnect("frogstar-vortex-animal-sa")
+original_df <- get_affected_animals_df(conn, histo_data, arc_species_code)
+exp_df <- original_df
+```
+This next section gets age and sex matched controls.
+```{r get-age-sex-matched-controls}
+ctrl_df <- get_ctrl_df(conn, exp_df, arc_species_code)
+
+## This next line is needed if controls are not found for all animals 
+exp_df <- exp_df[exp_df$id %in% ctrl_df$match_id, ]
+exp_df <- add_match_id(ctrl_df, exp_df)
+
+```
+This section looks up the location of each affected animal and its control
+for each day of life prior to the diagnosis date and classifies it according
+to one of the `r length(get_housing_types(conn))` housing types 
+(`r get_and_or_list(names(get_housing_types(conn)))`).
+```{r add-historical-housing-types}
+X_exp <- "X_exp"
+X_ctrl <- "X_ctrl"
+housing_types <- get_housing_types(conn)
+daily_exp_df <- make_daily_location(conn, X_exp, exp_df, housing_types)
+daily_ctrl_df <- make_daily_location(conn, X_ctrl, ctrl_df, housing_types)
+threshold_min_percent <- 0
+
+```
+The code below uses the daily housing type data to calculate the percent of
+life spent in each housing type. Animals must have at least 
+`r threshold_min_percent` of their housing history on record to be included in 
+the study.
+```{r calculate-housing-type-percents}
+exp_housing_df <- add_location_type_percents(exp_df, daily_exp_df, 
+                                     threshold_min_percent)
+ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df, 
+                                      threshold_min_percent)
+
+#merged_df <- merge(daily_df, df, by = "id")
+exp_df_to_be_melted <- subset(exp_housing_df, select = c("id", "age", "sex", "days_gang", 
+                                         "days_corral", "days_single"))
+melt_exp_df <- melt(exp_df_to_be_melted, id = c("id", "sex", "age"))
+ctrl_df_to_be_melted <- subset(ctrl_housing_df, select = c("id", "age", "sex", "days_gang", 
+                                         "days_corral", "days_single"))
+melt_ctrl_df <- melt(ctrl_df_to_be_melted, id = c("id", "sex", "age"))
+
+
+percent_exp_animals_ever_in_corral <- 
+  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+                         melt_exp_df$variable == 'days_corral']) / 
+  length(melt_exp_df$value[melt_exp_df$variable == 'days_corral'])
+percent_exp_animals_ever_in_gang <- 
+  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+                         melt_exp_df$variable == 'days_gang']) / 
+  length(melt_exp_df$value[melt_exp_df$variable == 'days_gang'])
+percent_exp_animals_ever_single <-
+  length(melt_exp_df$value[melt_exp_df$value > 0 & 
+                         melt_exp_df$variable == 'days_single']) / 
+  length(melt_exp_df$value[melt_exp_df$variable == 'days_single'])
+
+percent_ctrl_animals_ever_in_corral <- 
+  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+                         melt_ctrl_df$variable == 'days_corral']) / 
+  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_corral'])
+percent_ctrl_animals_ever_in_gang <- 
+  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+                         melt_ctrl_df$variable == 'days_gang']) / 
+  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_gang'])
+percent_ctrl_animals_ever_single <-
+  length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
+                         melt_ctrl_df$variable == 'days_single']) / 
+  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_single'])
+
+
+```
+```{r sample-housing-data}
+library(knitr)
+caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted), 
+                  " affected animals.")
+knitr::kable(exp_df_to_be_melted[1:6, ], caption = caption)
+caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted), 
+                  " control animals.")
+knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
+
+```
+
+The contrast we want to look at now is whether or not there is a sex 
+difference among those animals being observed with histoplasmosis. 
+There are a few issues that should be considered.
+
+  1. There are not equal numbers of males and females.
+  2. There are different proportions of males and females.
+  3. It is not known if males and females are examined at the same rate.
+  
+  The following analysis counts all of the males and females on each of the 
+  dates on which an animal was diagnosed to have histoplasmosis.
+
+```{r get-male-female-ratios}
+
+exp_df <- get_male_female_ratio(conn, exp_df, arc_species_code)
+
+affected_males <- length(exp_df$sex[exp_df$sex == 'M'])
+affected_females <- length(exp_df$sex[exp_df$sex == 'F'])
+
+total_males <- sum(exp_df$males)
+total_females <- sum(exp_df$females)
+
+```
+```{r simple-chisquare-analysis-of-sex-ratio}
+sex_exp_vs_total_m <- matrix(c(affected_females,
+                        total_females,
+                        affected_males,
+                        total_males), nrow = 2)
+sex_exp_vs_total_chisq <- chisq.test(x = sex_exp_vs_total_m)
+sex_exp_vs_total_m
+sex_exp_vs_total_chisq
+
+```
+```{r monti-carlo-simulation-analysis}
+
+stat_f <- get_stat_f('sex')
+sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, exp_df$male_prob, 
+                   length(exp_df$id[exp_df$sex == 'M']) / nrow(exp_df), stat_f)
+sex_mce
+sex_exp_vs_total_rr <- calc_relative_risk(sex_exp_vs_total_m, alpha = 0.01)
+sex_exp_vs_total_rr
+
+```
+
