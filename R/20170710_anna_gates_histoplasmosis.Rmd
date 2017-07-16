@@ -38,6 +38,7 @@ arc_species_code = 'PC'
 conn <- odbcConnect("frogstar-vortex-animal-sa")
 original_df <- get_affected_animals_df(conn, histo_data, arc_species_code)
 exp_df <- original_df
+
 ```
 This next section gets age and sex matched controls.
 ```{r get-age-sex-matched-controls}
@@ -176,3 +177,66 @@ histoplasmosis is `r round(sex_exp_vs_total_rr$RR, 2)` with a
 `r signif(sex_exp_vs_total_rr$lowervalue, 3)` -- 
 `r signif(sex_exp_vs_total_rr$uppervalue, 3)`.
 
+The next section of code will look for histoplasmosis in SqlMed data.
+
+The initial search limited the search to where the _TEST_ID_ was 25 and
+the _TEST_NAME_ was 
+"WRIGHT STAIN:", however, it was discovered that in most cases the _TEST_ID_ was
+398 and there is no _TEST_NAME_
+```{r get-sqlmed-histoplasmosis}
+sql_txt <- stri_c(
+  "select obr.animal_id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
+    obr.REQUESTED_DATE_TM, 
+     obr.OBSERVATION_DATE_TM,
+     obx.TEST_ID, obx.TEST_NAME, obx.OBSERVED_VALUE, 'FINAL' as RESULT_STATUS
+  from CLINICAL_PATH_OBR obr
+  inner join CLINICAL_PATH_OBX obx on obr.MESSAGE_ID = obx.MESSAGE_ID
+	  and obx.OBSERVED_VALUE like '%POSITIVE FOR H. CAP.VAR. DUBOISII%'
+	  and obx.RESULT_STATUS = 'F'
+  inner join current_data cd on obr.animal_id = cd.id
+  order by cd.arc_species_code, obr.OBSERVATION_DATE_TM, obr.VERIFIED_DATE_TM,
+    obr.REQUESTED_DATE_TM")
+sqlmed_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
+
+sqlmed_excel <- get_dated_excel_name("SqlMed_POSITIVE_FOR_H_CAP_VAR_DUBOISII")
+create_wkbk(file = stri_c("../reports/", sqlmed_excel), 
+            list(sqlmed_df), sheetnames = "histoplasmosis")
+
+
+```
+Of the `r length(unique(sqlmed_df$animal_id))` animals that were found to be
+positive for _POSITIVE FOR H. CAP.VAR. DUBOISII_,
+`r length(unique(sqlmed_df$animal_id[sqlmed_df$arc_species_code == "PC"]))` are 
+baboons.
+
+
+The next section will look for references to histoplasmosis within the clinical
+animal records.
+```{r get-clinical-history-references-to-histoplasmosis}
+sql_txt <- stri_c(
+  "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
+  	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
+  from clinical_procedures cp
+  inner join current_data cd on cp.id = cd.id
+  where cp.clinical_procedure like '%histoplas%'
+  order by cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num")
+existing_clinical_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
+existing_excel <- get_dated_excel_name("references to histoplas")
+create_wkbk(file = stri_c("../reports/", existing_excel), 
+            list(existing_clinical_df), sheetnames = "histoplas")
+
+```
+
+These data are in an Excel workbook (_`r existing_excel`_).
+
+The following section collects all of the clinical records in the _animal_ 
+database for all of the animals in the list provided by Ed Dick.
+
+```{r close-database-connection}
+odbcClose(conn)
+
+```
+
+
+The following section collects all of the clinical records in the _animal_ 
+database for all of the animals in the list provided by Ed Dick.
