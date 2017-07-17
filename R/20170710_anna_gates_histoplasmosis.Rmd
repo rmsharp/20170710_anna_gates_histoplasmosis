@@ -213,14 +213,15 @@ baboons.
 The next section will look for references to histoplasmosis within the clinical
 animal records.
 ```{r get-clinical-history-references-to-histoplasmosis}
-sql_txt <- stri_c(
+existing_clinical_sql <- stri_c(
   "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
   	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
   from clinical_procedures cp
   inner join current_data cd on cp.id = cd.id
   where cp.clinical_procedure like '%histoplas%'
   order by cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num")
-existing_clinical_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
+existing_clinical_df <- sqlQuery(conn, existing_clinical_sql, 
+                                 stringsAsFactors = FALSE)
 existing_excel <- get_dated_excel_name("references to histoplas")
 create_wkbk(file = stri_c("../reports/", existing_excel), 
             list(existing_clinical_df), sheetnames = "histoplas")
@@ -232,11 +233,32 @@ These data are in an Excel workbook (_`r existing_excel`_).
 The following section collects all of the clinical records in the _animal_ 
 database for all of the animals in the list provided by Ed Dick.
 
+```{r get-clinical-records-of-affected}
+id_str <- vector2string(unique(exp_df$id), SS = "', '")
+affected_clinic_sql <- stri_c(
+  "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
+  	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
+  from clinical_procedures cp
+  inner join current_data cd on cp.id = cd.id
+  where cp.id in ('", id_str, "')
+  order by cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num")
+
+affected_clinic_df <- sqlQuery(conn, affected_clinic_sql, 
+                               stringsAsFactors = FALSE)
+affected_clinic <- get_dated_excel_name("clinical_records_of_affecteds")
+create_wkbk(file = stri_c("../reports/", affected_clinic), 
+            list(affected_clinic_df), sheetnames = "affected")
+
+```
+There were `r nrow(affected_clinic_df)` clinical records found for 
+`r length(unique(affected_clinic_df$id))` affected animals. 
+The affected animal without clinical records is 
+`r exp_df$id[!exp_df$id %in% affected_clinic_df$id]`.
+They are recorded within the Excel workbook named _`r affected_clinic`_.
+
 ```{r close-database-connection}
 odbcClose(conn)
 
 ```
 
 
-The following section collects all of the clinical records in the _animal_ 
-database for all of the animals in the list provided by Ed Dick.
