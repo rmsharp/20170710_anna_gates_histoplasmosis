@@ -218,6 +218,7 @@ existing_clinical_sql <- stri_c(
   	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
   from clinical_procedures cp
   inner join current_data cd on cp.id = cd.id
+    and cd.arc_species_code = 'PC'
   where cp.clinical_procedure like '%histoplas%'
   order by cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num")
 existing_clinical_df <- sqlQuery(conn, existing_clinical_sql, 
