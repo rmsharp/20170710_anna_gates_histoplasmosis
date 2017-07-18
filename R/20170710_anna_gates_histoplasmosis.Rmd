@@ -257,6 +257,70 @@ The affected animal without clinical records is
 `r exp_df$id[!exp_df$id %in% affected_clinic_df$id]`.
 They are recorded within the Excel workbook named _`r affected_clinic`_.
 
+The next section looks at CBC and clinical chemistry values for the affected 
+animals 
+as closest to the date of diagnosis as possible. If the CBC and clinical 
+chemistry values are over one year from the date of diagnosis they are ignored.
+
+```{r get-cbc-and-clinical-chemistry-values}
+id_str <- vector2string(exp_df$id, SS = "', '")
+
+get_clin_path <- function(conn, id_str, view, affected_df) {
+  
+  clin_path_sql <- stri_c(
+    "select vcpc.*
+    from ", view, " as vcpc
+    where vcpc.id in ('", id_str, "')")
+  
+  clin_path_df <- sqlQuery(conn, clin_path_sql, stringsAsFactors = FALSE)
+  clin_path_df$message_id <- NULL
+  
+  clin_path_df <- merge(clin_path_df, affected_df[ , c("id", "first_noted")], 
+                   by = "id", all.x = TRUE, all.y = FALSE)
+  clin_path_df$clin_path_days <- 
+    abs((as.POSIXct(clin_path_df$first_noted) -
+           clin_path_df$observation_date_tm) /
+          ddays(1))
+  clin_path_df <- clin_path_df[order(clin_path_df$id, 
+                                    clin_path_df$clin_path_days), ]
+  
+  clin_path_df <- clin_path_df[!duplicated(clin_path_df$id), ]
+  clin_path_df
+}
+chem_df <- get_clin_path(conn, id_str, 
+                                  view = "v_clinical_path_chemistry",
+                                  exp_df)
+cbc_df <- get_clin_path(conn, id_str,
+                             view = "v_clinical_path_cbc",
+                             exp_df)
+cbc_chem <- get_dated_excel_name("cbc_and_clinical_chemistry_of_affecteds")
+create_wkbk(file = stri_c("../reports/", cbc_chem), 
+            list(cbc_chem_df, 
+                 cbc_chem_df[cbc_chem_df$clin_path_days < 365, ], 
+                 chem_df, 
+                 chem_df[chem_df$clin_path_days < 365, ]), 
+            sheetnames = c("nearest_cbc", "less_than_1yr_cbc", 
+                           "nearest_chem", "less_than_1yr_chem"))
+
+```
+There were `r nrow(cbc_df)` animals with CBC records of the 
+`r length(unique(exp_df$id))` affected animals. 
+Of those `r nrow(cbc_df[cbc_df$clin_path_days < 365, ])` had
+CBC values recorded within a year of the first noted date.
+The CBC values collect closest to the first_noted date and
+the subset of those which were less than one year from the first noted date
+are recorded within the Excel workbook named _`r cbc_chem`_.
+
+
+
+There were `r nrow(chem_df)` animals with clinical chemistry records of the 
+`r length(unique(exp_df$id))` affected animals. 
+Of those `r nrow(chem_df[chem_df$clin_path_days < 365, ])` had
+chemistry values recorded within a year of the first noted date.
+The clinical chemistry values collect closest to the first_noted date and
+the subset of those which were less than one year from the first noted date
+are recorded within the Excel workbook named _`r cbc_chem`_.
+
 ```{r close-database-connection}
 odbcClose(conn)
 
