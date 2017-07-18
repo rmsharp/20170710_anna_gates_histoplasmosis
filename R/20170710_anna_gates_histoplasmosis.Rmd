@@ -40,6 +40,40 @@ original_df <- get_affected_animals_df(conn, histo_data, arc_species_code)
 exp_df <- original_df
 
 ```
+The next section of code will look for histoplasmosis in SqlMed data.
+
+The initial search limited the search to where the _TEST_ID_ was 25 and
+the _TEST_NAME_ was 
+"WRIGHT STAIN:", however, it was discovered that in most cases the _TEST_ID_ was
+398 and there is no _TEST_NAME_
+```{r get-sqlmed-histoplasmosis}
+sql_txt <- stri_c(
+  "select obr.animal_id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
+    obr.REQUESTED_DATE_TM, 
+     obr.OBSERVATION_DATE_TM,
+     obx.TEST_ID, obx.TEST_NAME, obx.OBSERVED_VALUE, 'FINAL' as RESULT_STATUS
+  from CLINICAL_PATH_OBR obr
+  inner join CLINICAL_PATH_OBX obx on obr.MESSAGE_ID = obx.MESSAGE_ID
+	  and obx.OBSERVED_VALUE like '%POSITIVE FOR H. CAP.VAR. DUBOISII%'
+	  and obx.RESULT_STATUS = 'F'
+  inner join current_data cd on obr.animal_id = cd.id
+  order by cd.arc_species_code, obr.OBSERVATION_DATE_TM, obr.VERIFIED_DATE_TM,
+    obr.REQUESTED_DATE_TM")
+sqlmed_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
+
+sqlmed_excel <- get_dated_excel_name("SqlMed_POSITIVE_FOR_H_CAP_VAR_DUBOISII")
+create_wkbk(file = stri_c("../reports/", sqlmed_excel), 
+            list(sqlmed_df), sheetnames = "histoplasmosis")
+exp_sqlmed <- merge(exp_df, sqlmed_df[ , c("animal_id", "OBSERVATION_DATE_TM")],
+                    by.x = "id", by.y = "animal_id",  all = FALSE)
+
+```
+Of the `r length(unique(sqlmed_df$animal_id))` animals that were found to be
+positive for _POSITIVE FOR H. CAP.VAR. DUBOISII_,
+`r length(unique(sqlmed_df$animal_id[sqlmed_df$arc_species_code == "PC"]))` are 
+baboons.
+
+
 This next section gets age and sex matched controls.
 ```{r get-age-sex-matched-controls}
 ctrl_df <- get_ctrl_df(conn, exp_df, arc_species_code)
@@ -177,41 +211,6 @@ histoplasmosis is `r round(sex_exp_vs_total_rr$RR, 2)` with a
 `r signif(sex_exp_vs_total_rr$lowervalue, 3)` -- 
 `r signif(sex_exp_vs_total_rr$uppervalue, 3)`.
 
-The next section of code will look for histoplasmosis in SqlMed data.
-
-The initial search limited the search to where the _TEST_ID_ was 25 and
-the _TEST_NAME_ was 
-"WRIGHT STAIN:", however, it was discovered that in most cases the _TEST_ID_ was
-398 and there is no _TEST_NAME_
-```{r get-sqlmed-histoplasmosis}
-sql_txt <- stri_c(
-  "select obr.animal_id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
-    obr.REQUESTED_DATE_TM, 
-     obr.OBSERVATION_DATE_TM,
-     obx.TEST_ID, obx.TEST_NAME, obx.OBSERVED_VALUE, 'FINAL' as RESULT_STATUS
-  from CLINICAL_PATH_OBR obr
-  inner join CLINICAL_PATH_OBX obx on obr.MESSAGE_ID = obx.MESSAGE_ID
-	  and obx.OBSERVED_VALUE like '%POSITIVE FOR H. CAP.VAR. DUBOISII%'
-	  and obx.RESULT_STATUS = 'F'
-  inner join current_data cd on obr.animal_id = cd.id
-  order by cd.arc_species_code, obr.OBSERVATION_DATE_TM, obr.VERIFIED_DATE_TM,
-    obr.REQUESTED_DATE_TM")
-sqlmed_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
-
-sqlmed_excel <- get_dated_excel_name("SqlMed_POSITIVE_FOR_H_CAP_VAR_DUBOISII")
-create_wkbk(file = stri_c("../reports/", sqlmed_excel), 
-            list(sqlmed_df), sheetnames = "histoplasmosis")
-
-
-```
-Of the `r length(unique(sqlmed_df$animal_id))` animals that were found to be
-positive for _POSITIVE FOR H. CAP.VAR. DUBOISII_,
-`r length(unique(sqlmed_df$animal_id[sqlmed_df$arc_species_code == "PC"]))` are 
-baboons.
-
-
-The next section will look for references to histoplasmosis within the clinical
-animal records.
 ```{r get-clinical-history-references-to-histoplasmosis}
 existing_clinical_sql <- stri_c(
   "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
@@ -263,40 +262,12 @@ as closest to the date of diagnosis as possible. If the CBC and clinical
 chemistry values are over one year from the date of diagnosis they are ignored.
 
 ```{r get-cbc-and-clinical-chemistry-values}
-id_str <- vector2string(exp_df$id, SS = "', '")
-
-get_clin_path <- function(conn, id_str, view, affected_df) {
-  
-  clin_path_sql <- stri_c(
-    "select vcpc.*
-    from ", view, " as vcpc
-    where vcpc.id in ('", id_str, "')")
-  
-  clin_path_df <- sqlQuery(conn, clin_path_sql, stringsAsFactors = FALSE)
-  clin_path_df$message_id <- NULL
-  
-  clin_path_df <- merge(clin_path_df, affected_df[ , c("id", "first_noted")], 
-                   by = "id", all.x = TRUE, all.y = FALSE)
-  clin_path_df$clin_path_days <- 
-    abs((as.POSIXct(clin_path_df$first_noted) -
-           clin_path_df$observation_date_tm) /
-          ddays(1))
-  clin_path_df <- clin_path_df[order(clin_path_df$id, 
-                                    clin_path_df$clin_path_days), ]
-  
-  clin_path_df <- clin_path_df[!duplicated(clin_path_df$id), ]
-  clin_path_df
-}
-chem_df <- get_clin_path(conn, id_str, 
-                                  view = "v_clinical_path_chemistry",
-                                  exp_df)
-cbc_df <- get_clin_path(conn, id_str,
-                             view = "v_clinical_path_cbc",
-                             exp_df)
+chem_df <- get_clin_path(conn, view = "v_clinical_path_chemistry", exp_df)
+cbc_df <- get_clin_path(conn, view = "v_clinical_path_cbc", exp_df)
 cbc_chem <- get_dated_excel_name("cbc_and_clinical_chemistry_of_affecteds")
 create_wkbk(file = stri_c("../reports/", cbc_chem), 
-            list(cbc_chem_df, 
-                 cbc_chem_df[cbc_chem_df$clin_path_days < 365, ], 
+            list(cbc_df, 
+                 cbc_df[cbc_df$clin_path_days < 365, ], 
                  chem_df, 
                  chem_df[chem_df$clin_path_days < 365, ]), 
             sheetnames = c("nearest_cbc", "less_than_1yr_cbc", 
@@ -320,6 +291,20 @@ chemistry values recorded within a year of the first noted date.
 The clinical chemistry values collect closest to the first_noted date and
 the subset of those which were less than one year from the first noted date
 are recorded within the Excel workbook named _`r cbc_chem`_.
+
+Debbie Newman is going to run a polygenenic analysis on a pedigree constructed
+of individuals related to the affected animals. The list of affected animals
+is the animals from the original list plus the animals found with the Wright
+Stain in SqlMed.
+
+```{r create-id-file-for-genetic-analysis}
+ids <- unique(sqlmed_df$animal_id, exp_df$id)
+genetic_test <- get_dated_filename("genetic_test_ids.csv")
+write.table(data.frame(ID = ids), file = stri_c("../reports/", genetic_test), 
+          append = FALSE, sep = ", ", row.names = FALSE)
+```
+The IDs of `r length(ids)` affected animals were written to a comma separated
+value (CSV) file (_`r genetic_test`_).
 
 ```{r close-database-connection}
 odbcClose(conn)
