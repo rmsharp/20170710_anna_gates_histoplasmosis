@@ -34,10 +34,12 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 ```{r get-list-of-affected-animals}
 filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
 histo_data <- loadWorkbook(filename)
+original_df <- readWorksheet(histo_data, sheet = 1)
+names(original_df) <-  c("id", "first_noted")
+original_df <- original_df[order(original_df$id), ]
 arc_species_code = 'PC'
 conn <- odbcConnect("frogstar-vortex-animal-sa")
-original_df <- get_affected_animals_df(conn, histo_data, arc_species_code)
-exp_df <- original_df
+affected_df <- original_df
 
 ```
 The next section of code will look for histoplasmosis in SqlMed data.
@@ -46,9 +48,14 @@ The initial search limited the search to where the _TEST_ID_ was 25 and
 the _TEST_NAME_ was 
 "WRIGHT STAIN:", however, it was discovered that in most cases the _TEST_ID_ was
 398 and there is no _TEST_NAME_
+
+This code finds all of the positive results and puts them in a dataframe
+(_sqlmed_df_). It then finds the first observation for each animal and discards
+subsequent observations leaving a second dataframe with the first observation
+for each animal (_sqlmed_first_df_).
 ```{r get-sqlmed-histoplasmosis}
 sql_txt <- stri_c(
-  "select obr.animal_id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
+  "select obr.animal_id as id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
     obr.REQUESTED_DATE_TM, 
      obr.OBSERVATION_DATE_TM,
      obx.TEST_ID, obx.TEST_NAME, obx.OBSERVED_VALUE, 'FINAL' as RESULT_STATUS
@@ -57,15 +64,57 @@ sql_txt <- stri_c(
 	  and obx.OBSERVED_VALUE like '%POSITIVE FOR H. CAP.VAR. DUBOISII%'
 	  and obx.RESULT_STATUS = 'F'
   inner join current_data cd on obr.animal_id = cd.id
-  order by cd.arc_species_code, obr.OBSERVATION_DATE_TM, obr.VERIFIED_DATE_TM,
-    obr.REQUESTED_DATE_TM")
+  order by cd.arc_species_code, obr.animal_id, obr.OBSERVATION_DATE_TM, 
+    obr.VERIFIED_DATE_TM, obr.REQUESTED_DATE_TM")
 sqlmed_df <- sqlQuery(conn, sql_txt, stringsAsFactors = FALSE)
 
+sqlmed_first_df <- sqlmed_df[order(sqlmed_df$id, 
+                                   format(sqlmed_df$OBSERVATION_DATE_TM, 
+                                          format = "%Y-%m-%d")), ]
+sqlmed_first_df <- 
+  sqlmed_first_df[!duplicated(sqlmed_first_df[ , "id"]), ]
 sqlmed_excel <- get_dated_excel_name("SqlMed_POSITIVE_FOR_H_CAP_VAR_DUBOISII")
 create_wkbk(file = stri_c("../reports/", sqlmed_excel), 
-            list(sqlmed_df), sheetnames = "histoplasmosis")
-exp_sqlmed <- merge(exp_df, sqlmed_df[ , c("animal_id", "OBSERVATION_DATE_TM")],
-                    by.x = "id", by.y = "animal_id",  all = FALSE)
+            list(sqlmed_df, sqlmed_first_df), 
+            sheetnames = c("all_histo", "first_histo"))
+
+sqlmed_first_df <- sqlmed_first_df[ , c("id", "OBSERVATION_DATE_TM")]
+sqlmed_first_df$OBSERVATION_DATE_TM <- 
+  as.Date(sqlmed_first_df$OBSERVATION_DATE_TM)
+
+```
+We want to find out the earliest date of diagnosis. That is was it the 
+physical assessment or was it the pathology laboratories Wright Stain diagnosis.
+
+To do that we need to compare the affected_df$first_noted date to the 
+sqlmed_df$OBSERVATION_DATE_TM.
+
+The next few lines of code first use merge() to create a new dataframe 
+exp_sqlmed_df that has animals in both affected_df and sqlmed_df.
+This makes comparison of affected_df$first_noted date to the 
+sqlmed_df$OBSERVATION_DATE_TM easier. 
+
+This information will be used to update the first_noted column in affected_df.
+
+```{r first-diagnosis}
+exp_sqlmed_df <- merge(affected_df, 
+                       sqlmed_first_df[ , c("id", "OBSERVATION_DATE_TM")],
+                       by = "id", all = FALSE)
+exp_sqlmed_df$sqlmed_first <- format(exp_sqlmed_df$first_noted, 
+                                  format = "%Y-%m-%d") > 
+  format(exp_sqlmed_df$OBSERVATION_DATE_TM, format = "%Y-%m-%d")
+use_sqlmed_date_df <- exp_sqlmed_df[exp_sqlmed_df$sqlmed_first, ]
+## Both dataframes are ordered by id at this point.
+affected_df[affected_df$id %in% use_sqlmed_date_df$id, ]$first_noted <- 
+  use_sqlmed_date_df$OBSERVATION_DATE_TM
+affected_df <- rbind(affected_df, sqlmed_first_df[!sqlmed_first_df$id %in% affected_df$id, ])
+
+```
+
+This will add supplimental data used for some later analyses.
+
+```{r add-supplimenta-data}
+affected_df <- add_supplimental_data(conn, affected_df)
 
 ```
 Of the `r length(unique(sqlmed_df$animal_id))` animals that were found to be
@@ -76,11 +125,11 @@ baboons.
 
 This next section gets age and sex matched controls.
 ```{r get-age-sex-matched-controls}
-ctrl_df <- get_ctrl_df(conn, exp_df, arc_species_code)
+ctrl_df <- get_ctrl_df(conn, affected_df, arc_species_code)
 
 ## This next line is needed if controls are not found for all animals 
-exp_df <- exp_df[exp_df$id %in% ctrl_df$match_id, ]
-exp_df <- add_match_id(ctrl_df, exp_df)
+affected_df <- affected_df[affected_df$id %in% ctrl_df$match_id, ]
+affected_df <- add_match_id(ctrl_df, affected_df)
 
 ```
 This section looks up the location of each affected animal and its control
@@ -88,10 +137,10 @@ for each day of life prior to the diagnosis date and classifies it according
 to one of the `r length(get_housing_types(conn))` housing types 
 (`r get_and_or_list(names(get_housing_types(conn)))`).
 ```{r add-historical-housing-types}
-X_exp <- "X_exp"
+X_affected <- "X_affected"
 X_ctrl <- "X_ctrl"
 housing_types <- get_housing_types(conn)
-daily_exp_df <- make_daily_location(conn, X_exp, exp_df, housing_types)
+daily_affected_df <- make_daily_location(conn, X_affected, affected_df, housing_types)
 daily_ctrl_df <- make_daily_location(conn, X_ctrl, ctrl_df, housing_types)
 threshold_min_percent <- 0
 
@@ -101,32 +150,32 @@ life spent in each housing type. Animals must have at least
 `r threshold_min_percent` of their housing history on record to be included in 
 the study.
 ```{r calculate-housing-type-percents}
-exp_housing_df <- add_location_type_percents(exp_df, daily_exp_df, 
+exp_housing_df <- add_location_type_percents(affected_df, daily_affected_df, 
                                      threshold_min_percent)
 ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df, 
                                       threshold_min_percent)
 
 #merged_df <- merge(daily_df, df, by = "id")
-exp_df_to_be_melted <- subset(exp_housing_df, select = c("id", "age", "sex", "days_gang", 
+affected_df_to_be_melted <- subset(exp_housing_df, select = c("id", "age", "sex", "days_gang", 
                                          "days_corral", "days_single"))
-melt_exp_df <- melt(exp_df_to_be_melted, id = c("id", "sex", "age"))
+melt_affected_df <- melt(affected_df_to_be_melted, id = c("id", "sex", "age"))
 ctrl_df_to_be_melted <- subset(ctrl_housing_df, select = c("id", "age", "sex", "days_gang", 
                                          "days_corral", "days_single"))
 melt_ctrl_df <- melt(ctrl_df_to_be_melted, id = c("id", "sex", "age"))
 
 
-percent_exp_animals_ever_in_corral <- 
-  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_corral']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_corral'])
-percent_exp_animals_ever_in_gang <- 
-  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_gang']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_gang'])
-percent_exp_animals_ever_single <-
-  100.0 * length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_single']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_single'])
+percent_affected_animals_ever_in_corral <- 
+  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
+                         melt_affected_df$variable == 'days_corral']) / 
+  length(melt_affected_df$value[melt_affected_df$variable == 'days_corral'])
+percent_affected_animals_ever_in_gang <- 
+  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
+                         melt_affected_df$variable == 'days_gang']) / 
+  length(melt_affected_df$value[melt_affected_df$variable == 'days_gang'])
+percent_affected_animals_ever_single <-
+  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
+                         melt_affected_df$variable == 'days_single']) / 
+  length(melt_affected_df$value[melt_affected_df$variable == 'days_single'])
 
 percent_ctrl_animals_ever_in_corral <- 
   100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
@@ -145,20 +194,20 @@ percent_ctrl_animals_ever_single <-
 ```
 One of the sources of histoplasmois infection is soil, which makes housing in 
 the corral a potential risk factor. However, there were 
-`r round(100.0 - percent_exp_animals_ever_in_corral, 0)` percent
+`r round(100.0 - percent_affected_animals_ever_in_corral, 0)` percent
 of the affected animals that had never been in the corral.
 ```{r sample-housing-data}
 library(knitr)
-caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted), 
+caption <- stri_c("Housing history for six of ", length(affected_df_to_be_melted), 
                   " affected animals.")
-knitr::kable(exp_df_to_be_melted[1:6, ], caption = caption)
-caption <- stri_c("Housing history for six of ", length(exp_df_to_be_melted), 
+knitr::kable(affected_df_to_be_melted[1:6, ], caption = caption)
+caption <- stri_c("Housing history for six of ", length(affected_df_to_be_melted), 
                   " control animals.")
 knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 
 ```
 ```{r get-housing-type-ratios}
-exp_df <- get_housing_type_ratios(conn, exp_df, housing_types, arc_species_code)
+affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, arc_species_code)
 
 ```
 The contrast we want to look at now is whether or not there is a sex 
@@ -174,42 +223,42 @@ There are a few issues that should be considered.
 
 ```{r get-male-female-ratios}
 
-exp_df <- get_male_female_ratio(conn, exp_df, arc_species_code)
+affected_df <- get_male_female_ratio(conn, affected_df, arc_species_code)
 
-affected_males <- length(exp_df$sex[exp_df$sex == 'M'])
-affected_females <- length(exp_df$sex[exp_df$sex == 'F'])
+affected_males <- length(affected_df$sex[affected_df$sex == 'M'])
+affected_females <- length(affected_df$sex[affected_df$sex == 'F'])
 
-total_males <- sum(exp_df$males)
-total_females <- sum(exp_df$females)
+total_males <- sum(affected_df$males)
+total_females <- sum(affected_df$females)
 
 ```
 ```{r simple-chisquare-analysis-of-sex-ratio}
-sex_exp_vs_total_m <- matrix(c(affected_females,
+sex_affected_vs_total_m <- matrix(c(affected_females,
                         total_females,
                         affected_males,
                         total_males), nrow = 2)
-sex_exp_vs_total_chisq <- chisq.test(x = sex_exp_vs_total_m)
-sex_exp_vs_total_m
-sex_exp_vs_total_chisq
+sex_affected_vs_total_chisq <- chisq.test(x = sex_affected_vs_total_m)
+sex_affected_vs_total_m
+sex_affected_vs_total_chisq
 
 ```
 ```{r monti-carlo-simulation-analysis}
 
 stat_f <- get_stat_f("sex") # Returns a function that calculates the frequency 
                             # of males
-sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, exp_df$male_prob, 
-                   length(exp_df$id[exp_df$sex == 'M']) / nrow(exp_df), stat_f)
+sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, affected_df$male_prob, 
+                   length(affected_df$id[affected_df$sex == 'M']) / nrow(affected_df), stat_f)
 sex_mce
 alpha <- 0.01
-sex_exp_vs_total_rr <- calc_relative_risk(sex_exp_vs_total_m, alpha = alpha)
-sex_exp_vs_total_rr
+sex_affected_vs_total_rr <- calc_relative_risk(sex_affected_vs_total_m, alpha = alpha)
+sex_affected_vs_total_rr
 
 ```
 The relative risk of a female versus a male of being diagnosed as having 
-histoplasmosis is `r round(sex_exp_vs_total_rr$RR, 2)` with a 
-`r round((1.0 - sex_exp_vs_total_rr$alpha) * 100.0, 0)` percent confidence of 
-`r signif(sex_exp_vs_total_rr$lowervalue, 3)` -- 
-`r signif(sex_exp_vs_total_rr$uppervalue, 3)`.
+histoplasmosis is `r round(sex_affected_vs_total_rr$RR, 2)` with a 
+`r round((1.0 - sex_affected_vs_total_rr$alpha) * 100.0, 0)` percent confidence of 
+`r signif(sex_affected_vs_total_rr$lowervalue, 3)` -- 
+`r signif(sex_affected_vs_total_rr$uppervalue, 3)`.
 
 ```{r get-clinical-history-references-to-histoplasmosis}
 existing_clinical_sql <- stri_c(
@@ -234,7 +283,7 @@ The following section collects all of the clinical records in the _animal_
 database for all of the animals in the list provided by Ed Dick.
 
 ```{r get-clinical-records-of-affected}
-id_str <- vector2string(unique(exp_df$id), SS = "', '")
+id_str <- vector2string(unique(affected_df$id), SS = "', '")
 affected_clinic_sql <- stri_c(
   "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
   	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
@@ -253,7 +302,7 @@ create_wkbk(file = stri_c("../reports/", affected_clinic),
 There were `r nrow(affected_clinic_df)` clinical records found for 
 `r length(unique(affected_clinic_df$id))` affected animals. 
 The affected animal without clinical records is 
-`r exp_df$id[!exp_df$id %in% affected_clinic_df$id]`.
+`r affected_df$id[!affected_df$id %in% affected_clinic_df$id]`.
 They are recorded within the Excel workbook named _`r affected_clinic`_.
 
 The next section looks at CBC and clinical chemistry values for the affected 
@@ -262,8 +311,8 @@ as closest to the date of diagnosis as possible. If the CBC and clinical
 chemistry values are over one year from the date of diagnosis they are ignored.
 
 ```{r get-cbc-and-clinical-chemistry-values}
-chem_df <- get_clin_path(conn, view = "v_clinical_path_chemistry", exp_df)
-cbc_df <- get_clin_path(conn, view = "v_clinical_path_cbc", exp_df)
+chem_df <- get_clin_path(conn, view = "v_clinical_path_chemistry", affected_df)
+cbc_df <- get_clin_path(conn, view = "v_clinical_path_cbc", affected_df)
 cbc_chem <- get_dated_excel_name("cbc_and_clinical_chemistry_of_affecteds")
 create_wkbk(file = stri_c("../reports/", cbc_chem), 
             list(cbc_df, 
@@ -275,7 +324,7 @@ create_wkbk(file = stri_c("../reports/", cbc_chem),
 
 ```
 There were `r nrow(cbc_df)` animals with CBC records of the 
-`r length(unique(exp_df$id))` affected animals. 
+`r length(unique(affected_df$id))` affected animals. 
 Of those `r nrow(cbc_df[cbc_df$clin_path_days < 365, ])` had
 CBC values recorded within a year of the first noted date.
 The CBC values collect closest to the first_noted date and
@@ -285,7 +334,7 @@ are recorded within the Excel workbook named _`r cbc_chem`_.
 
 
 There were `r nrow(chem_df)` animals with clinical chemistry records of the 
-`r length(unique(exp_df$id))` affected animals. 
+`r length(unique(affected_df$id))` affected animals. 
 Of those `r nrow(chem_df[chem_df$clin_path_days < 365, ])` had
 chemistry values recorded within a year of the first noted date.
 The clinical chemistry values collect closest to the first_noted date and
@@ -298,7 +347,7 @@ is the animals from the original list plus the animals found with the Wright
 Stain in SqlMed.
 
 ```{r create-id-file-for-genetic-analysis}
-ids <- unique(sqlmed_df$animal_id, exp_df$id)
+ids <- unique(sqlmed_df$animal_id, affected_df$id)
 genetic_test <- get_dated_filename("genetic_test_ids.csv")
 write.table(data.frame(ID = ids), file = stri_c("../reports/", genetic_test), 
           append = FALSE, sep = ", ", row.names = FALSE)
