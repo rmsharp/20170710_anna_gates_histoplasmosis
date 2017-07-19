@@ -17,7 +17,7 @@ library(xtable, quietly = TRUE)
 library(RODBC, quietly = TRUE)
 library(ggplot2, quietly = TRUE)
 library(reshape2, quietly = TRUE)
-library(lubridate, quietly = TRUE)
+suppressPackageStartupMessages(library(lubridate, quietly = TRUE))
 library(stringi, quietly = TRUE)
 suppressPackageStartupMessages(library(XLConnect, quietly = TRUE))
 
@@ -90,24 +90,26 @@ To do that we need to compare the affected_df$first_noted date to the
 sqlmed_df$OBSERVATION_DATE_TM.
 
 The next few lines of code first use merge() to create a new dataframe 
-exp_sqlmed_df that has animals in both affected_df and sqlmed_df.
+affected_sqlmed_df that has animals in both affected_df and sqlmed_df.
 This makes comparison of affected_df$first_noted date to the 
 sqlmed_df$OBSERVATION_DATE_TM easier. 
 
 This information will be used to update the first_noted column in affected_df.
 
 ```{r first-diagnosis}
-exp_sqlmed_df <- merge(affected_df, 
+affected_sqlmed_df <- merge(affected_df, 
                        sqlmed_first_df[ , c("id", "OBSERVATION_DATE_TM")],
                        by = "id", all = FALSE)
-exp_sqlmed_df$sqlmed_first <- format(exp_sqlmed_df$first_noted, 
+affected_sqlmed_df$sqlmed_first <- format(affected_sqlmed_df$first_noted, 
                                   format = "%Y-%m-%d") > 
-  format(exp_sqlmed_df$OBSERVATION_DATE_TM, format = "%Y-%m-%d")
-use_sqlmed_date_df <- exp_sqlmed_df[exp_sqlmed_df$sqlmed_first, ]
+  format(affected_sqlmed_df$OBSERVATION_DATE_TM, format = "%Y-%m-%d")
+use_sqlmed_date_df <- affected_sqlmed_df[affected_sqlmed_df$sqlmed_first, ]
 ## Both dataframes are ordered by id at this point.
 affected_df[affected_df$id %in% use_sqlmed_date_df$id, ]$first_noted <- 
   use_sqlmed_date_df$OBSERVATION_DATE_TM
-affected_df <- rbind(affected_df, sqlmed_first_df[!sqlmed_first_df$id %in% affected_df$id, ])
+names(sqlmed_first_df) <- c("id", "first_noted")
+affected_df <- rbind(affected_df, 
+                     sqlmed_first_df[!sqlmed_first_df$id %in% affected_df$id, ])
 
 ```
 
@@ -117,9 +119,9 @@ This will add supplimental data used for some later analyses.
 affected_df <- add_supplimental_data(conn, affected_df)
 
 ```
-Of the `r length(unique(sqlmed_df$animal_id))` animals that were found to be
+Of the `r length(unique(sqlmed_df$id))` animals that were found to be
 positive for _POSITIVE FOR H. CAP.VAR. DUBOISII_,
-`r length(unique(sqlmed_df$animal_id[sqlmed_df$arc_species_code == "PC"]))` are 
+`r length(unique(sqlmed_df$id[sqlmed_df$arc_species_code == "PC"]))` are 
 baboons.
 
 
@@ -150,13 +152,13 @@ life spent in each housing type. Animals must have at least
 `r threshold_min_percent` of their housing history on record to be included in 
 the study.
 ```{r calculate-housing-type-percents}
-exp_housing_df <- add_location_type_percents(affected_df, daily_affected_df, 
+affected_housing_df <- add_location_type_percents(affected_df, daily_affected_df, 
                                      threshold_min_percent)
 ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df, 
                                       threshold_min_percent)
 
 #merged_df <- merge(daily_df, df, by = "id")
-affected_df_to_be_melted <- subset(exp_housing_df, select = c("id", "age", "sex", "days_gang", 
+affected_df_to_be_melted <- subset(affected_housing_df, select = c("id", "age", "sex", "days_gang", 
                                          "days_corral", "days_single"))
 melt_affected_df <- melt(affected_df_to_be_melted, id = c("id", "sex", "age"))
 ctrl_df_to_be_melted <- subset(ctrl_housing_df, select = c("id", "age", "sex", "days_gang", 
@@ -347,7 +349,7 @@ is the animals from the original list plus the animals found with the Wright
 Stain in SqlMed.
 
 ```{r create-id-file-for-genetic-analysis}
-ids <- unique(sqlmed_df$animal_id, affected_df$id)
+ids <- unique(sqlmed_df$id, affected_df$id)
 genetic_test <- get_dated_filename("genetic_test_ids.csv")
 write.table(data.frame(ID = ids), file = stri_c("../reports/", genetic_test), 
           append = FALSE, sep = ", ", row.names = FALSE)
