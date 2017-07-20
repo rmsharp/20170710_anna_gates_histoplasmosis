@@ -1,8 +1,6 @@
 ---
-title: "R Notebook"
-output: html_notebook
-editor_options: 
-  chunk_output_type: inline
+title: "Histoplamosis"
+output: html_document
 ---
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
@@ -36,10 +34,12 @@ filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
 histo_data <- loadWorkbook(filename)
 original_df <- readWorksheet(histo_data, sheet = 1)
 names(original_df) <-  c("id", "first_noted")
+original_df$id <- blank_fill_ids(original_df$id)
 original_df <- original_df[order(original_df$id), ]
 arc_species_code = 'PC'
 conn <- odbcConnect("frogstar-vortex-animal-sa")
 affected_df <- original_df
+affected_df1 <- affected_df
 
 ```
 The next section of code will look for histoplasmosis in SqlMed data.
@@ -110,13 +110,16 @@ affected_df[affected_df$id %in% use_sqlmed_date_df$id, ]$first_noted <-
 names(sqlmed_first_df) <- c("id", "first_noted")
 affected_df <- rbind(affected_df, 
                      sqlmed_first_df[!sqlmed_first_df$id %in% affected_df$id, ])
-
+affected_df2 <- affected_df
+affected_df2[!affected_df2$id %in% affected_df1$id, ]
 ```
 
 This will add supplimental data used for some later analyses.
 
 ```{r add-supplimenta-data}
 affected_df <- add_supplimental_data(conn, affected_df)
+affected_df3 <- affected_df
+affected_df3[!affected_df3$id %in% affected_df2$id, ]
 
 ```
 Of the `r length(unique(sqlmed_df$id))` animals that were found to be
@@ -127,11 +130,16 @@ baboons.
 
 This next section gets age and sex matched controls.
 ```{r get-age-sex-matched-controls}
-ctrl_df <- get_ctrl_df(conn, affected_df, arc_species_code)
+ctrl_df <- get_ctrl(conn, affected_df, arc_species_code)
 
 ## This next line is needed if controls are not found for all animals 
 affected_df <- affected_df[affected_df$id %in% ctrl_df$match_id, ]
+affected_df4 <- affected_df
+affected_df4[!affected_df4$id %in% affected_df3$id, ]
+
 affected_df <- add_match_id(ctrl_df, affected_df)
+affected_df5 <- affected_df
+affected_df5[!affected_df5$id %in% affected_df4$id, ]
 
 ```
 This section looks up the location of each affected animal and its control
@@ -142,7 +150,8 @@ to one of the `r length(get_housing_types(conn))` housing types
 X_affected <- "X_affected"
 X_ctrl <- "X_ctrl"
 housing_types <- get_housing_types(conn)
-daily_affected_df <- make_daily_location(conn, X_affected, affected_df, housing_types)
+daily_affected_df <- make_daily_location(conn, X_affected, affected_df, 
+                                         housing_types)
 daily_ctrl_df <- make_daily_location(conn, X_ctrl, ctrl_df, housing_types)
 threshold_min_percent <- 0
 
@@ -152,10 +161,11 @@ life spent in each housing type. Animals must have at least
 `r threshold_min_percent` of their housing history on record to be included in 
 the study.
 ```{r calculate-housing-type-percents}
-affected_housing_df <- add_location_type_percents(affected_df, daily_affected_df, 
-                                     threshold_min_percent)
-ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df, 
-                                      threshold_min_percent)
+affected_housing_df <- add_location_type_percents(affected_df, 
+                                                  daily_affected_df, 
+                                                  threshold_min_percent)
+ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df,
+                                              threshold_min_percent)
 
 #merged_df <- merge(daily_df, df, by = "id")
 affected_df_to_be_melted <- subset(affected_housing_df, select = c("id", "age", "sex", "days_gang", 
@@ -210,6 +220,8 @@ knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 ```
 ```{r get-housing-type-ratios}
 affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, arc_species_code)
+affected_df6 <- affected_df
+affected_df6[!affected_df6$id %in% affected_df5$id, ]
 
 ```
 The contrast we want to look at now is whether or not there is a sex 
@@ -226,6 +238,8 @@ There are a few issues that should be considered.
 ```{r get-male-female-ratios}
 
 affected_df <- get_male_female_ratio(conn, affected_df, arc_species_code)
+affected_df7 <- affected_df
+affected_df7[!affected_df7$id %in% affected_df6$id, ]
 
 affected_males <- length(affected_df$sex[affected_df$sex == 'M'])
 affected_females <- length(affected_df$sex[affected_df$sex == 'F'])
@@ -249,10 +263,12 @@ sex_affected_vs_total_chisq
 stat_f <- get_stat_f("sex") # Returns a function that calculates the frequency 
                             # of males
 sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, affected_df$male_prob, 
-                   length(affected_df$id[affected_df$sex == 'M']) / nrow(affected_df), stat_f)
+                   length(affected_df$id[affected_df$sex == 'M']) / 
+                     nrow(affected_df), stat_f)
 sex_mce
 alpha <- 0.01
-sex_affected_vs_total_rr <- calc_relative_risk(sex_affected_vs_total_m, alpha = alpha)
+sex_affected_vs_total_rr <- calc_relative_risk(sex_affected_vs_total_m, 
+                                               alpha = alpha)
 sex_affected_vs_total_rr
 
 ```
@@ -349,7 +365,7 @@ is the animals from the original list plus the animals found with the Wright
 Stain in SqlMed.
 
 ```{r create-id-file-for-genetic-analysis}
-ids <- unique(sqlmed_df$id, affected_df$id)
+ids <- unique(c(sqlmed_df$id, affected_df$id))
 genetic_test <- get_dated_filename("genetic_test_ids.csv")
 write.table(data.frame(ID = ids), file = stri_c("../reports/", genetic_test), 
           append = FALSE, sep = ", ", row.names = FALSE)
