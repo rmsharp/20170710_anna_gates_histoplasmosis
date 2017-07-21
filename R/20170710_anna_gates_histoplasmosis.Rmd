@@ -23,12 +23,6 @@ library(histoplasmosisr, quietly = TRUE)
 
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
 ```{r get-list-of-affected-animals}
 filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
 histo_data <- loadWorkbook(filename)
@@ -86,13 +80,13 @@ sqlmed_first_df$OBSERVATION_DATE_TM <-
 We want to find out the earliest date of diagnosis. That is was it the 
 physical assessment or was it the pathology laboratories Wright Stain diagnosis.
 
-To do that we need to compare the affected_df$first_noted date to the 
-sqlmed_df$OBSERVATION_DATE_TM.
+To do that we need to compare the affected_df\$first_noted date to the 
+sqlmed_df\$OBSERVATION_DATE_TM.
 
 The next few lines of code first use merge() to create a new dataframe 
 affected_sqlmed_df that has animals in both affected_df and sqlmed_df.
-This makes comparison of affected_df$first_noted date to the 
-sqlmed_df$OBSERVATION_DATE_TM easier. 
+This makes comparison of affected_df\$first_noted date to the 
+sqlmed_df\$OBSERVATION_DATE_TM easier. 
 
 This information will be used to update the first_noted column in affected_df.
 
@@ -111,7 +105,9 @@ names(sqlmed_first_df) <- c("id", "first_noted")
 affected_df <- rbind(affected_df, 
                      sqlmed_first_df[!sqlmed_first_df$id %in% affected_df$id, ])
 affected_df2 <- affected_df
-affected_df2[!affected_df2$id %in% affected_df1$id, ]
+## This is the number of new Ids from the SqlMed search
+length(affected_df2$id[!affected_df2$id %in% affected_df1$id])
+
 ```
 
 This will add supplimental data used for some later analyses.
@@ -219,7 +215,8 @@ knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 
 ```
 ```{r get-housing-type-ratios}
-affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, arc_species_code)
+affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, 
+                                       arc_species_code)
 affected_df6 <- affected_df
 affected_df6[!affected_df6$id %in% affected_df5$id, ]
 
