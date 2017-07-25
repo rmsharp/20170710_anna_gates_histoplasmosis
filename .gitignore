@@ -4,4 +4,5 @@
 .Ruserdata
 R/*
 !R/*.Rmd
+!R/*.Rnw
 reports/*
