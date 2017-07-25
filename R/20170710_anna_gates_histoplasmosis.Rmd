@@ -20,10 +20,11 @@ library(stringi, quietly = TRUE)
 suppressPackageStartupMessages(library(XLConnect, quietly = TRUE))
 
 library(histoplasmosisr, quietly = TRUE)
+conn <- odbcConnect("frogstar-vortex-animal-sa")
 
 ```
 
-```{r get-list-of-affected-animals}
+```{r get-list-of-affected-animals, cache = TRUE}
 filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
 histo_data <- loadWorkbook(filename)
 original_df <- readWorksheet(histo_data, sheet = 1)
@@ -31,7 +32,6 @@ names(original_df) <-  c("id", "first_noted")
 original_df$id <- blank_fill_ids(original_df$id)
 original_df <- original_df[order(original_df$id), ]
 arc_species_code = 'PC'
-conn <- odbcConnect("frogstar-vortex-animal-sa")
 affected_df <- original_df
 affected_df1 <- affected_df
 
@@ -47,7 +47,7 @@ This code finds all of the positive results and puts them in a dataframe
 (_sqlmed_df_). It then finds the first observation for each animal and discards
 subsequent observations leaving a second dataframe with the first observation
 for each animal (_sqlmed_first_df_).
-```{r get-sqlmed-histoplasmosis}
+```{r get-sqlmed-histoplasmosis, cache = TRUE}
 sql_txt <- stri_c(
   "select obr.animal_id as id, cd.arc_species_code, obr.VERIFIED_DATE_TM, 
     obr.REQUESTED_DATE_TM, 
@@ -90,7 +90,7 @@ sqlmed_df\$OBSERVATION_DATE_TM easier.
 
 This information will be used to update the first_noted column in affected_df.
 
-```{r first-diagnosis}
+```{r first-diagnosis, cache = TRUE}
 affected_sqlmed_df <- merge(affected_df, 
                        sqlmed_first_df[ , c("id", "OBSERVATION_DATE_TM")],
                        by = "id", all = FALSE)
@@ -112,7 +112,7 @@ length(affected_df2$id[!affected_df2$id %in% affected_df1$id])
 
 This will add supplimental data used for some later analyses.
 
-```{r add-supplimenta-data}
+```{r add-supplimenta-data, cache = TRUE}
 affected_df <- add_supplimental_data(conn, affected_df)
 affected_df3 <- affected_df
 affected_df3[!affected_df3$id %in% affected_df2$id, ]
@@ -125,7 +125,7 @@ baboons.
 
 
 This next section gets age and sex matched controls.
-```{r get-age-sex-matched-controls}
+```{r get-age-sex-matched-controls, cache = TRUE}
 ctrl_df <- get_ctrl(conn, affected_df, arc_species_code)
 
 ## This next line is needed if controls are not found for all animals 
@@ -142,7 +142,7 @@ This section looks up the location of each affected animal and its control
 for each day of life prior to the diagnosis date and classifies it according
 to one of the `r length(get_housing_types(conn))` housing types 
 (`r get_and_or_list(names(get_housing_types(conn)))`).
-```{r add-historical-housing-types}
+```{r add-historical-housing-types, cache = TRUE}
 X_affected <- "X_affected"
 X_ctrl <- "X_ctrl"
 housing_types <- get_housing_types(conn)
@@ -156,7 +156,9 @@ The code below uses the daily housing type data to calculate the percent of
 life spent in each housing type. Animals must have at least 
 `r threshold_min_percent` of their housing history on record to be included in 
 the study.
-```{r calculate-housing-type-percents}
+```{r calculate-housing-type-percents, cache = TRUE}
+
+## Percent of life in corral - logistic regression. 
 affected_housing_df <- add_location_type_percents(affected_df, 
                                                   daily_affected_df, 
                                                   threshold_min_percent)
@@ -204,17 +206,19 @@ One of the sources of histoplasmois infection is soil, which makes housing in
 the corral a potential risk factor. However, there were 
 `r round(100.0 - percent_affected_animals_ever_in_corral, 0)` percent
 of the affected animals that had never been in the corral.
-```{r sample-housing-data}
+```{r sample-housing-data, cache = TRUE}
 library(knitr)
-caption <- stri_c("Housing history for six of ", length(affected_df_to_be_melted), 
+caption <- stri_c("Housing history for six of ", 
+                  length(affected_df_to_be_melted), 
                   " affected animals.")
 knitr::kable(affected_df_to_be_melted[1:6, ], caption = caption)
-caption <- stri_c("Housing history for six of ", length(affected_df_to_be_melted), 
+caption <- stri_c("Housing history for six of ", 
+                  length(affected_df_to_be_melted), 
                   " control animals.")
 knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 
 ```
-```{r get-housing-type-ratios}
+```{r get-housing-type-ratios, cache = TRUE}
 affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, 
                                        arc_species_code)
 affected_df6 <- affected_df
@@ -232,7 +236,7 @@ There are a few issues that should be considered.
   The following analysis counts all of the males and females on each of the 
   dates on which an animal was diagnosed to have histoplasmosis.
 
-```{r get-male-female-ratios}
+```{r get-male-female-ratios, cache = TRUE}
 
 affected_df <- get_male_female_ratio(conn, affected_df, arc_species_code)
 affected_df7 <- affected_df
@@ -245,17 +249,18 @@ total_males <- sum(affected_df$males)
 total_females <- sum(affected_df$females)
 
 ```
-```{r simple-chisquare-analysis-of-sex-ratio}
-sex_affected_vs_total_m <- matrix(c(affected_females,
-                        total_females,
+```{r simple-chisquare-analysis-of-sex-ratio, cache = TRUE}
+sex_affected_vs_unaffected_m <- matrix(c(affected_females,
+                        total_females - affected_females,
                         affected_males,
-                        total_males), nrow = 2)
-sex_affected_vs_total_chisq <- chisq.test(x = sex_affected_vs_total_m)
-sex_affected_vs_total_m
-sex_affected_vs_total_chisq
+                        total_males - affected_males), nrow = 2)
+sex_affected_vs_unaffected_chisq <- 
+  chisq.test(x = sex_affected_vs_unaffected_m)
+sex_affected_vs_unaffected_m
+sex_affected_vs_unaffected_chisq
 
 ```
-```{r monti-carlo-simulation-analysis}
+```{r monti-carlo-simulation-analysis, cache = TRUE}
 
 stat_f <- get_stat_f("sex") # Returns a function that calculates the frequency 
                             # of males
@@ -264,18 +269,71 @@ sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, affected_df$male_prob,
                      nrow(affected_df), stat_f)
 sex_mce
 alpha <- 0.01
-sex_affected_vs_total_rr <- calc_relative_risk(sex_affected_vs_total_m, 
+sex_affected_vs_unaffected_rr <- calc_relative_risk(sex_affected_vs_unaffected_m, 
                                                alpha = alpha)
-sex_affected_vs_total_rr
+sex_affected_vs_unaffected_rr
 
 ```
 The relative risk of a female versus a male of being diagnosed as having 
-histoplasmosis is `r round(sex_affected_vs_total_rr$RR, 2)` with a 
-`r round((1.0 - sex_affected_vs_total_rr$alpha) * 100.0, 0)` percent confidence of 
-`r signif(sex_affected_vs_total_rr$lowervalue, 3)` -- 
-`r signif(sex_affected_vs_total_rr$uppervalue, 3)`.
+histoplasmosis is `r round(sex_affected_vs_unaffected_rr$RR, 2)` with a 
+`r round((1.0 - sex_affected_vs_unaffected_rr$alpha) * 100.0, 0)` percent 
+confidence of 
+`r signif(sex_affected_vs_unaffected_rr$lowervalue, 3)` -- 
+`r signif(sex_affected_vs_unaffected_rr$uppervalue, 3)`.
 
-```{r get-clinical-history-references-to-histoplasmosis}
+```{r get-reproductive-status-and-counts, cache = TRUE}
+## Add age of 4-20 years
+affected_repro_df <- get_repro_counts(conn, affected_df, 
+                                      age_range = c(1461, (21 * 365.25) - 1), 
+                                      "PC")
+
+```
+```{r simple-chisquare-analysis-of-reproductive-status, cache = TRUE}
+non_repro_females <- length(affected_repro_df$id[
+  affected_repro_df$repro == "N" & !is.na(affected_repro_df$repro)])
+repro_females <- length(affected_repro_df$id[
+  affected_repro_df$repro == "Y" & !is.na(affected_repro_df$repro)])
+
+total_non_repro_females <- 
+  sum(affected_repro_df$repro_count[
+    affected_repro_df$repro == "N" & !is.na(affected_repro_df$repro)])
+total_repro_females <- sum(affected_repro_df$repro_count[
+  affected_repro_df$repro == "Y" & !is.na(affected_repro_df$repro)])
+total_females_in_age_range <- sum(affected_repro_df$females, na.rm = TRUE)
+repro_vs_non_repro_m <- matrix(c(non_repro_females,
+                        total_non_repro_females - non_repro_females,
+                        repro_females,
+                        total_repro_females - repro_females), nrow = 2)
+repro_vs_non_repro_chisq <- chisq.test(x = repro_vs_non_repro_m)
+repro_vs_non_repro_m
+repro_vs_non_repro_chisq
+repro_vs_non_repro_rr_05 <- calc_relative_risk(repro_vs_non_repro_m, 
+                                               alpha = 0.05)
+repro_vs_non_repro_rr_01 <- calc_relative_risk(repro_vs_non_repro_m, 
+                                               alpha = 0.01)
+repro_vs_non_repro_rr_05
+repro_vs_non_repro_rr_01
+
+
+```
+
+The relative risk of a nursing or pregnant female versus a non nursing or
+pregnant female of being diagnosed as having 
+histoplasmosis is `r round(repro_vs_non_repro_rr_05$RR, 2)` with a 
+`r round((1.0 - repro_vs_non_repro_rr_05$alpha) * 100.0, 0)` percent 
+confidence of 
+`r signif(repro_vs_non_repro_rr_05$lowervalue, 3)` -- 
+`r signif(repro_vs_non_repro_rr_05$uppervalue, 3)`.
+
+The relative risk of a nursing or pregnant female versus a non nursing or
+pregnant female of being diagnosed as having 
+histoplasmosis is `r round(repro_vs_non_repro_rr_01$RR, 2)` with a 
+`r round((1.0 - repro_vs_non_repro_rr_01$alpha) * 100.0, 0)` percent 
+confidence of 
+`r signif(repro_vs_non_repro_rr_01$lowervalue, 3)` -- 
+`r signif(repro_vs_non_repro_rr_01$uppervalue, 3)`.
+
+```{r get-clinical-history-references-to-histoplasmosis, cache = TRUE}
 existing_clinical_sql <- stri_c(
   "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
   	cp.clinical_procedure, cp.user_name, cp.entry_date_tm
@@ -297,7 +355,7 @@ These data are in an Excel workbook (_`r existing_excel`_).
 The following section collects all of the clinical records in the _animal_ 
 database for all of the animals in the list provided by Ed Dick.
 
-```{r get-clinical-records-of-affected}
+```{r get-clinical-records-of-affected, cache = TRUE}
 id_str <- vector2string(unique(affected_df$id), SS = "', '")
 affected_clinic_sql <- stri_c(
   "select cd.arc_species_code, cp.id, cp.proc_date, cp.seq_num, 
@@ -325,7 +383,7 @@ animals
 as closest to the date of diagnosis as possible. If the CBC and clinical 
 chemistry values are over one year from the date of diagnosis they are ignored.
 
-```{r get-cbc-and-clinical-chemistry-values}
+```{r get-cbc-and-clinical-chemistry-values, cache = TRUE}
 chem_df <- get_clin_path(conn, view = "v_clinical_path_chemistry", affected_df)
 cbc_df <- get_clin_path(conn, view = "v_clinical_path_cbc", affected_df)
 cbc_chem <- get_dated_excel_name("cbc_and_clinical_chemistry_of_affecteds")
@@ -361,16 +419,17 @@ of individuals related to the affected animals. The list of affected animals
 is the animals from the original list plus the animals found with the Wright
 Stain in SqlMed.
 
-```{r create-id-file-for-genetic-analysis}
+```{r create-id-file-for-genetic-analysis, cache = TRUE}
 ids <- unique(c(sqlmed_df$id, affected_df$id))
 genetic_test <- get_dated_filename("genetic_test_ids.csv")
 write.table(data.frame(ID = ids), file = stri_c("../reports/", genetic_test), 
           append = FALSE, sep = ", ", row.names = FALSE)
+
 ```
 The IDs of `r length(ids)` affected animals were written to a comma separated
 value (CSV) file (_`r genetic_test`_).
 
-```{r close-database-connection}
+```{r close-database-connection, cache = TRUE}
 odbcClose(conn)
 
 ```
