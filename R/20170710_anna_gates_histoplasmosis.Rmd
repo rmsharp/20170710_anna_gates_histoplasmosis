@@ -219,7 +219,8 @@ knitr::kable(ctrl_df_to_be_melted[1:6, ], caption = caption)
 
 ```
 ```{r get-housing-type-ratios, cache = TRUE}
-affected_df <- get_housing_type_ratios(conn, affected_df, housing_types, 
+affected_df <- get_housing_type_ratios(conn, affected_housing_df, 
+                                       housing_types, 
                                        arc_species_code)
 affected_df6 <- affected_df
 affected_df6[!affected_df6$id %in% affected_df5$id, ]
