@@ -432,6 +432,8 @@ value (CSV) file (_`r genetic_test`_).
 
 ```{r close-database-connection, cache = TRUE}
 odbcClose(conn)
+filename <- get_dated_filename("histo_data.RData")
+save.image(file = filename, compress = "bzip2")
 
 ```
 
