@@ -64,10 +64,9 @@ library(histoplasmosisr, quietly = TRUE)
 
 @
 <<load-data>>=
-load("../data/2017-07-25_15_30_17_histo_data.RData")
+load("../data/2017-07-26_12_53_37_histo_data.RData")
 start_end_dates <- c(min(affected_housing_df$first_noted), 
                      max(affected_housing_df$first_noted))
-conn <- odbcConnect("frogstar-vortex-animal-sa")
 
 @
 <<make-header, include = TRUE, results = 'asis'>>=
@@ -128,12 +127,6 @@ has moved cases from the end of the year to the beginning of the year.
 I do not know the origin of these data and dates and cannot speculate 
 further.
 
-Look for age matched controls in necropsy animals. Compare amyloidosis prevalence.
-
-Pull all clinical chemistry and CBCs for all affected and controls two years or
-less from diagnosis date.
-
-
 <<set_options, echo = FALSE, include = FALSE>>=
 options(continue = " ")
 options(width = 60)
@@ -162,23 +155,21 @@ in the
 
 \textbf{Housing Distribution}
 \begin{description}
-\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_corral >= 50,])} 
+\item{There were - 
+\Sexpr{nrow(affected_housing_df[affected_housing_df$percent_corral >= 50,])} 
 animals that 
 lived more that 50 percent of their lives in the corral.}
-\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_gang >= 50,])} 
-animals that 
-lived more that 50 percent of their lives in the gang cages.}
-\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_corral >= 0,])} 
+\item{There were - 
+\Sexpr{nrow(affected_housing_df[affected_housing_df$percent_corral <= 0,])} 
 animals that were never in the corral.}
 \end{description}
 
 \subsection{Time Series Analysis for Seasonal Affects}
-
+Not completed.
 \subsection{Monte Carlo Estimates}
-We will calculate empirical distribution of sex ratios (male and female), 
-location housing types (gang, corral, single, and other), 
-and location surface types (porous and non porous).
-
+We calculated empirical distribution of sex ratios (male and female). 
+Statistical hypothesis testing based on these distributions were
+consistent with those using standard chi-square tests.
 
 \subsection{Increase Relative Risk of Histoplasmosis in Female Baboons}
 There were \Sexpr{affected_males} affected males and \Sexpr{affected_females} 
@@ -186,31 +177,41 @@ females
 in the \Sexpr{nrow(affected_df)} baboons with histoplasmosis. 
 We counted the number of
 males and females on the first day each animal was noted to have histoplasmosis.
-Animal \Sexpr{affected_df$id[1]} was noted to have histoplasmosis first on 
-\Sexpr{strftime(affected_df$first_noted[1], format = "%m-%d-%Y")}. 
+For example, animal \Sexpr{affected_df$id[100]} 
+was noted to have histoplasmosis first on 
+\Sexpr{strftime(affected_df$first_noted[100], format = "%m-%d-%Y")}. 
 On that same day
-there were \Sexpr{affected_df$males[1]} male and \Sexpr{affected_df$females[1]} 
+there were \Sexpr{affected_df$males[100]} male and 
+\Sexpr{affected_df$females[100]} 
 female baboons.
-Thus, the probability that \Sexpr{affected_df$id[1]} 
-(a \Sexpr{ifelse(affected_df$sex[1] == 'M', "male", "female")} baboon) 
+Thus, the probability that \Sexpr{affected_df$id[100]} 
+(a \Sexpr{ifelse(affected_df$sex[100] == 'M', "male", "female")} baboon) 
 was a male was 
-\Sexpr{round(affected_df$males[1] / (affected_df$males[1] + affected_df$females[1]), 3)}. 
+\Sexpr{round(affected_df$males[100] / (affected_df$males[100] + affected_df$females[100]), 3)}. 
 
-One way we have looked 
-for a difference in relative risk 
+We also calculated empirical distributions of sex ratios (male and female) 
+using 100,000 samples using census data proportions for each first noted date.
+The Monte Carlo statistical hypothesis testing based on these distributions were
+consistent with those using standard chi-square tests.
+
+We calculated the relative risk 
 (difference in susceptibility to histoplasmosis)
-between the sexes was to compare the ratio of affected females 
-(\Sexpr{affected_females})
-to affected males 
-(\Sexpr{affected_males})
-to the ratio of the sum of all females present on the first day each animal was
-noted to have histoplasmosis 
-(\Sexpr{format(total_females, big.mark = ",", scientific = FALSE)}) 
-and the sum of all males present on the 
-first day each animal was noted to have histoplasmosis 
-(\Sexpr{format(total_males, big.mark=",", scientific=FALSE)})
-using a chi-square analysis with Yates' continuity correction. 
-The probability
+of females and males. 
+As previously noted there were 
+(\Sexpr{affected_females}) affected females and
+(\Sexpr{affected_males}) affected males.
+The sum of all females present on the first day each animal was
+noted to have histoplasmosis was
+(\Sexpr{format(total_females, big.mark = ",", scientific = FALSE)};
+average of 
+\Sexpr{format(round(total_females / nrow(affected_df), 0), big.mark = ",", scientific = FALSE)}) 
+and the sum of all males present on the
+first day each animal was noted to have histoplasmosis was
+(\Sexpr{format(total_males, big.mark=",", scientific=FALSE)};
+average of 
+\Sexpr{format(round(total_males / nrow(affected_df), 0), big.mark = ",", scientific = FALSE)}). 
+In a chi-square analysis with Yates' continuity correction with these data 
+the probability
 that there is no association between sex and being diagnosed with 
 histoplasmosis is \Sexpr{signif(sex_affected_vs_unaffected_chisq$p.value, 4)}. 
 The relative risk of a female 
@@ -246,11 +247,9 @@ time_series <- ts(test$freq,
 @
 \subsection{Time Series Analysis for Seasonal Affects}
 Has not been completed.
-Figure~\ref{month-of-year} shows the total number of affected animals for 
-each month of the year in a 
+Figure~\ref{fig:month-of-year} shows the total number of affected animals for 
+each month of the year
 <<plot-hist, fig.height = 6, fig.width=8, results = 'asis', include = TRUE>>=
-roundup_animals_affected_df <- get_roundup_animals(conn, X_affected)
-roundup_animals_ctrl_df <- get_roundup_animals(conn, X_ctrl)
 
 par(mfrow = c(1, 2))
 cat("\\begin{figure}\n")
@@ -264,7 +263,7 @@ hist(no_roundup_affected_df$month, main = '', xlab = "Month of Year",
 
                    
                    
-cat("\\label{month-of-year}\n")
+cat("\\label{fig:month-of-year}\n")
 cat(stri_c("\\caption{Histogram of number of \\emph{Histoplasmosis duboisii} 
           cases in baboons for each day (left) and month (right) of the year 
           with the first case seen on ",
