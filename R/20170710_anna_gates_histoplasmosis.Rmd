@@ -206,6 +206,12 @@ One of the sources of histoplasmois infection is soil, which makes housing in
 the corral a potential risk factor. However, there were 
 `r round(100.0 - percent_affected_animals_ever_in_corral, 0)` percent
 of the affected animals that had never been in the corral.
+
+```{r roundup-animals, cache = TRUE}
+roundup_animals_affected_df <- get_roundup_animals(conn, X_affected)
+roundup_animals_ctrl_df <- get_roundup_animals(conn, X_ctrl)
+
+```
 ```{r sample-housing-data, cache = TRUE}
 library(knitr)
 caption <- stri_c("Housing history for six of ", 

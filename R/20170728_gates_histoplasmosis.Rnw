@@ -64,9 +64,10 @@ library(histoplasmosisr, quietly = TRUE)
 
 @
 <<load-data>>=
-load("affected_housing_df.RData")
+load("../data/2017-07-25_15_30_17_histo_data.RData")
 start_end_dates <- c(min(affected_housing_df$first_noted), 
                      max(affected_housing_df$first_noted))
+conn <- odbcConnect("frogstar-vortex-animal-sa")
 
 @
 <<make-header, include = TRUE, results = 'asis'>>=
@@ -79,31 +80,44 @@ make_knitr_header(
 
 @
 
-%%% BEGIN DOCUMENT
-\begin{document}
-
 \maketitle
 \section*{Purpose}
-The purpose of this document is to present the analyses of baboons diagnosed 
-as having histoplasmosis by gross examination and by a positive Wrights Stain.
+The purpose of this document is to present the analyses of possible factors
+that may be associated with baboons diagnosed with 
+\emph{Histoplasmosis duboisii}.
+Factors examined include age, sex, housing surface types (soil or epoxy), CBC,
+clinical chemistry values, and time of year (seasonality).
+
+
+\section*{Methods}
+\subsection*{Selection of Animals}
+Animals were included in the study as affected when 
+\Sexpr{nrow(affected_df1)} were diagnosed
+as having histoplasmosis by gross examination and \Sexpr{nrow(sqlmed_first_df)} 
+had a positive Wrights Stain.
+There were \Sexpr{nrow(sqlmed_df[sqlmed_df$id %in% affected_df1$id, ])}
 An initial list of 
 list of animals and the date of initial detection of 
 \emph{Histoplasmosis duboisii} provided 
-by Dr. Dick as described in the e-mails below.  
-
-Subsequent to receiving the data, Priscilla Williams, Ed Dick, Michael Owston, 
-and Mark Sharp met to discuss possible avenues of investigation. According to
-notes taken by Priscilla, we are to look at age of occurrence and try to 
-detect any increase in risk based the following.
+by Dr. Dick
+Subsequent to receiving the data in July of 2014, Priscilla Williams, Ed Dick,
+Michael Owston, 
+and Mark Sharp met to discuss possible avenues of investigation. 
+These were later amended during meetings of Ed Dick, Shannon Hall-Ursone, 
+Anna Gates, and Mark Sharp.
 \begin{enumerate}
 \item Gender
-\item Housing type (corral, gang, single)
-\item Housing location (near vegetation or away from vegetation)
+\item Housing type (corral, gang, single) - not examined because our 
+older single housing data are not sufficient
+\item Housing location (near vegetation or away from vegetation) - not examined
+since we do not have vegetation procimity data recorded.
 \item Housing surface types (soil, highly porous rock and concrete, or 
 Stonehard (epoxy) surfaces)
-\item Seasons of the year
-\item Birth location
-\item Days in groups
+\item Seasons of the year - examined but there are work schedule related 
+seasonal effects in December and January to swamp those months.
+\item Birth location - not examined
+\item Days in groups - removed because our older single housing data are not 
+sufficient
 \item Over time (has there been and increase or decrease in incidence)
 \item Reproductive status (nursing or pregnant versus not nursing or pregnant)
 \end{enumerate}
@@ -129,136 +143,35 @@ opts_chunk$set(keep.source = TRUE, eps = FALSE)
 opts_chunk$set(echo = FALSE, cache = FALSE, include = FALSE, tidy = FALSE)
 
 @
-<<get_data, echo = FALSE, include = FALSE>>=
-filename <- "../inst/extdata/Copy of Histo Boon Sharp 20140716.xls"
-histo_data <- loadWorkbook(filename)
-arc_species_code = 'PC'
-conn <- odbcConnect("frogstar-vortex-animal-sa")
-original_df <- get_affected_animals_df(conn, histo_data, arc_species_code)
-exp_df <- original_df
-
-@
-<<add-birthdate-sex-age>>=
-ctrl_df <- get_ctrl_df(conn, exp_df, arc_species_code)
-
-## This next line is needed if controls are not found for all animals 
-exp_df <- exp_df[exp_df$id %in% ctrl_df$match_id, ]
-exp_df <- add_match_id(ctrl_df, exp_df)
-
-@
-<<report-ages>>=
-create_wkbk("../reports/histo_animal_ages_at_first_noted_date.xlsx", 
-            list(exp_df, ctrl_df), 
-            sheetnames = c("experimental", "controls"))
-
-@
-<<create-ed-hist-and-daily-df>>=
-X_exp <- "X_exp"
-X_ctrl <- "X_ctrl"
-housing_types <- get_housing_types(conn)
-daily_exp_df <- make_daily_location(conn, X_exp, exp_df, housing_types)
-daily_ctrl_df <- make_daily_location(conn, X_ctrl, ctrl_df, housing_types)
-
-# id_str <- vector2string(exp_df$id, SS = "', '")
-# id_str <- vector2string(ctrl_df$id, SS = "', '")
-# sql_txt <- stri_c(
-#   "select cd.id from current_data cd where cd.id in ('", id_str, "')
-#     and cd.at_sfbr = 'Y'")
-# alive_df <- sqlQuery(conn, sql_txt)
-
-@
-<<get_df_percentages, echo = FALSE, include = TRUE, results = "asis">>=
-threshold_min_percent <- 0
-exp_df <- add_location_type_percents(exp_df, daily_exp_df, 
-                                     threshold_min_percent)
-ctrl_df <- add_location_type_percents(ctrl_df, daily_ctrl_df, threshold_min_percent)
-
-#merged_df <- merge(daily_df, df, by = "id")
-exp_df_to_be_melted <- subset(exp_df, select = c("id", "age", "sex", "days_gang", 
-                                         "days_corral", "days_single"))
-melt_exp_df <- melt(exp_df_to_be_melted, id = c("id", "sex", "age"))
-
-percent_exp_animals_ever_in_corral <- 
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_corral']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_corral'])
-percent_exp_animals_ever_in_gang <- 
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_gang']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_gang'])
-percent_exp_animals_ever_single <-
-  length(melt_exp_df$value[melt_exp_df$value > 0 & 
-                         melt_exp_df$variable == 'days_single']) / 
-  length(melt_exp_df$value[melt_exp_df$variable == 'days_single'])
-
-@
-<<myplot, fig.height = 6, fig.width=8, include = TRUE, results = "asis", echo = FALSE>>=
-#hist(df$age)
-
-# ggplot(df, aes(age, fill = sex)) + geom_histogram(binwidth = 1) + 
-#   facet_grid(~sex , 
-#              #margins = TRUE, 
-#              scales = "free")
-# ggplot(melt_df, aes(x= value, fill=sex)) + 
-#    geom_bar(binwidth = 250) + facet_grid (variable ~ sex) + xlab("") + 
-#    scale_fill_discrete("loc_grp")
-
-#  grid.frame(name="df") 
-#  grid.pack("df", ggplotGrob(age_freq_plot)) 
-#  grid.pack("df", textGrob("a new subtitle"), side="bottom") 
-
-#ggplot(melt_df, aes(x= age, fill=sex)) + 
-#   geom_bar(binwidth = round(max(melt_df$age), digits = -1)/10) + #facet_grid (variable ~ sex) + xlab("") + coord_flip() + 
-#   scale_fill_discrete("loc_grp")
-
-
-@
-<<get-male-female-ratios>>=
-exp_df <- get_male_female_ratio(conn, exp_df, arc_species_code)
-
-affected_males <- length(exp_df$sex[exp_df$sex == 'M'])
-affected_females <- length(exp_df$sex[exp_df$sex == 'F'])
-
-total_males <- sum(exp_df$males)
-total_females <- sum(exp_df$females)
-sex_exp_vs_total_m <- matrix(c(affected_females,
-                        total_females,
-                        affected_males,
-                        total_males), nrow = 2)
-sex_exp_vs_total_chisq <- chisq.test(x = sex_exp_vs_total_m)
-stat_f <- get_stat_f('sex')
-sex_mce <- get_mce(c('M', 'F'), ntrials = 100000, exp_df$male_prob, 
-                   length(exp_df$id[exp_df$sex == 'M']) / nrow(exp_df), stat_f)
-sex_exp_vs_total_rr <- calc_relative_risk(sex_exp_vs_total_m, alpha = 0.01)
-
-@
 \subsection{Demographic Information}
-There were \Sexpr{nrow(original_df)} of those, \Sexpr{nrow(exp_df)} animals had
+There were \Sexpr{nrow(original_df)} of those, 
+\Sexpr{nrow(affected_housing_df[affected_housing_df$total_percent > 90, ])} 
+animals had
 at least
-\Sexpr{threshold_min_percent} percent of their location history data recorded 
+\Sexpr{90} percent of their location history data recorded 
 in the 
 \textit{animal} database. 
 
 
 \textbf{Sex Distribution}
 \begin{description}
-\item{There were \Sexpr{nrow(exp_df[exp_df$sex == 'M',])}} males.
-\item{There were \Sexpr{nrow(exp_df[exp_df$sex == 'F',])} females. }
+\item{There were \Sexpr{nrow(affected_df[affected_df$sex == 'M',])}} males.
+\item{There were \Sexpr{nrow(affected_df[affected_df$sex == 'F',])} females. }
 \end{description}
 
 
 \textbf{Housing Distribution}
 \begin{description}
-\item{There were - \Sexpr{nrow(exp_df[exp_df$percent_corral >= 50,])} 
+\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_corral >= 50,])} 
 animals that 
 lived more that 50 percent of their lives in the corral.}
-\item{There were - \Sexpr{nrow(exp_df[exp_df$percent_gang >= 50,])} 
+\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_gang >= 50,])} 
 animals that 
 lived more that 50 percent of their lives in the gang cages.}
+\item{There were - \Sexpr{nrow(affected_df[affected_df$percent_corral >= 0,])} 
+animals that were never in the corral.}
 \end{description}
 
-
-\section{Methods}
 \subsection{Time Series Analysis for Seasonal Affects}
 
 \subsection{Monte Carlo Estimates}
@@ -270,16 +183,18 @@ and location surface types (porous and non porous).
 \subsection{Increase Relative Risk of Histoplasmosis in Female Baboons}
 There were \Sexpr{affected_males} affected males and \Sexpr{affected_females} 
 females
-in the \Sexpr{nrow(exp_df)} baboons with histoplasmosis. We counted the number of
+in the \Sexpr{nrow(affected_df)} baboons with histoplasmosis. 
+We counted the number of
 males and females on the first day each animal was noted to have histoplasmosis.
-Animal \Sexpr{exp_df$id[1]} was noted to have histoplasmosis first on 
-\Sexpr{strftime(exp_df$first_noted[1], format = "%m-%d-%Y")}. On that same day
-there were \Sexpr{exp_df$males[1]} male and \Sexpr{exp_df$females[1]} 
+Animal \Sexpr{affected_df$id[1]} was noted to have histoplasmosis first on 
+\Sexpr{strftime(affected_df$first_noted[1], format = "%m-%d-%Y")}. 
+On that same day
+there were \Sexpr{affected_df$males[1]} male and \Sexpr{affected_df$females[1]} 
 female baboons.
-Thus, the probability that \Sexpr{exp_df$id[1]} 
-(a \Sexpr{ifelse(exp_df$sex[1] == 'M', "male", "female")} baboon) 
+Thus, the probability that \Sexpr{affected_df$id[1]} 
+(a \Sexpr{ifelse(affected_df$sex[1] == 'M', "male", "female")} baboon) 
 was a male was 
-\Sexpr{round(exp_df$males[1] / (exp_df$males[1] + exp_df$females[1]), 3)}. 
+\Sexpr{round(affected_df$males[1] / (affected_df$males[1] + affected_df$females[1]), 3)}. 
 
 One way we have looked 
 for a difference in relative risk 
@@ -297,14 +212,14 @@ first day each animal was noted to have histoplasmosis
 using a chi-square analysis with Yates' continuity correction. 
 The probability
 that there is no association between sex and being diagnosed with 
-histoplasmosis is \Sexpr{signif(sex_exp_vs_total_chisq$p.value, 4)}. 
+histoplasmosis is \Sexpr{signif(sex_affected_vs_unaffected_chisq$p.value, 4)}. 
 The relative risk of a female 
 being diagnosed with histoplasmosis is 
-\Sexpr{signif(sex_exp_vs_total_rr$RR, 3)} with
-a \Sexpr{round(100 * (1 - sex_exp_vs_total_rr$alpha), 0)} 
+\Sexpr{signif(sex_affected_vs_unaffected_rr$RR, 3)} with
+a \Sexpr{round(100 * (1 - sex_affected_vs_unaffected_rr$alpha), 0)} 
 percent confidence interval of 
-\Sexpr{signif(sex_exp_vs_total_rr$lowervalue, 3)} -- 
-\Sexpr{signif(sex_exp_vs_total_rr$uppervalue, 3)}. 
+\Sexpr{signif(sex_affected_vs_unaffected_rr$lowervalue, 3)} -- 
+\Sexpr{signif(sex_affected_vs_unaffected_rr$uppervalue, 3)}. 
 The Monte Carlo estimate of the p value,  
 using \Sexpr{sum(unlist(sex_mce))} trials, is
 \Sexpr{signif((sex_mce$lt + sex_mce$eq) / sum(unlist(sex_mce)))}
@@ -334,46 +249,49 @@ Has not been completed.
 Figure~\ref{month-of-year} shows the total number of affected animals for 
 each month of the year in a 
 <<plot-hist, fig.height = 6, fig.width=8, results = 'asis', include = TRUE>>=
-roundup_animals_exp_df <- get_roundup_animals(conn, X_exp)
+roundup_animals_affected_df <- get_roundup_animals(conn, X_affected)
 roundup_animals_ctrl_df <- get_roundup_animals(conn, X_ctrl)
 
 par(mfrow = c(1, 2))
 cat("\\begin{figure}\n")
-no_roundup_exp_df <- exp_df[!exp_df$id %in% roundup_animals_exp_df$id, ]
-hist(no_roundup_exp_df$day_of_year, main = '', xlab = "Day of Year", breaks = 60,
+no_roundup_affected_df <- affected_df[!affected_df$id %in% 
+                                        roundup_animals_affected_df$id, ]
+hist(no_roundup_affected_df$day_of_year, main = '', xlab = "Day of Year", 
+     breaks = 60,
      prob = TRUE)
-hist(no_roundup_exp_df$month, main = '', xlab = "Month of Year", breaks = 0:12)
+hist(no_roundup_affected_df$month, main = '', xlab = "Month of Year", 
+     breaks = 0:12)
 
                    
                    
 cat("\\label{month-of-year}\n")
-cat(str_c("\\caption{Histogram of number of \\emph{Histoplasmosis duboisii} 
+cat(stri_c("\\caption{Histogram of number of \\emph{Histoplasmosis duboisii} 
           cases in baboons for each day (left) and month (right) of the year 
           with the first case seen on ",
-          strftime(min(no_roundup_exp_df$first_noted), format = '%D'), 
+          strftime(min(no_roundup_affected_df$first_noted), format = '%D'), 
           " and the last case seen on ", 
-          strftime(max(no_roundup_exp_df$first_noted), format = '%D'), 
-          ". The ", nrow(roundup_animals_exp_df), " animals that were 
+          strftime(max(no_roundup_affected_df$first_noted), format = '%D'), 
+          ". The ", nrow(roundup_animals_affected_df), " animals that were 
           observed during a semiannual roundup were 
           removed from the graphs since they provide an artificial 
           seasonality to the distribution of cases.}\n"))
 cat("\\end{figure}\n")
 ## Aggie colors #3F0000 or #660000
 cat("\\begin{figure}\n")
-no_roundup_exp_df$month_name <- 
-  factor(str_sub(month.name[no_roundup_exp_df$month], 1, 3),
-         levels = str_sub(month.name[1:12], 1, 3))
-ggplot(no_roundup_exp_df, aes(x=month_name,)) + 
+no_roundup_affected_df$month_name <- 
+  factor(stri_sub(month.name[no_roundup_affected_df$month], 1, 3),
+         levels = stri_sub(month.name[1:12], 1, 3))
+ggplot(no_roundup_affected_df, aes(x=month_name,)) + 
   geom_bar(fill = "#660000", colour = "#660000", stat = "count") + 
   xlab("Month of Year") + ylab("Count") 
 cat("\\label{gg-plot-month-of-year}\n")
-cat(str_c("\\caption{Bar plot of number of \\emph{Histoplasmosis duboisii} 
+cat(stri_c("\\caption{Bar plot of number of \\emph{Histoplasmosis duboisii} 
           cases in baboons for each day month of the year 
           with the first case seen on ",
-          strftime(min(no_roundup_exp_df$first_noted), format = '%D'), 
+          strftime(min(no_roundup_affected_df$first_noted), format = '%D'), 
           " and the last case seen on ", 
-          strftime(max(no_roundup_exp_df$first_noted), format = '%D'), 
-          ". The ", nrow(roundup_animals_exp_df), " animals that were 
+          strftime(max(no_roundup_affected_df$first_noted), format = '%D'), 
+          ". The ", nrow(roundup_animals_affected_df), " animals that were 
           observed during a semiannual roundup were 
           removed from the graphs since they provide an artificial 
           seasonality to the distribution of cases.}\n"))
@@ -382,23 +300,6 @@ cat("\\end{figure}\n")
 @
 
 <<analyse-housing-type>>=
-ntrials <- 10 # 1000 is more realistic
-exp_df <- get_housing_type_ratios(conn, exp_df, housing_types, 
-                                  arc_species_code)
-odbcClose(conn)
-
-stat_f <- get_stat_f('housing_type_gang')
-housing_type_gang_mce <- 
-  get_mce(c('gang', 'not_gang'), ntrials = ntrials, exp_df$p_gang, 
-                   mean(exp_df$percent_gang), stat_f)
-stat_f <- get_stat_f('housing_type_corral')
-housing_type_corral_mce <- 
-  get_mce(c('corral', 'not_corral'), ntrials = ntrials, exp_df$p_corral, 
-                   mean(exp_df$percent_corral), stat_f)
-stat_f <- get_stat_f('housing_type_single')
-housing_type_single_mce <- 
-  get_mce(c('single', 'not_single'), ntrials = ntrials, exp_df$p_single, 
-                   mean(exp_df$percent_single), stat_f)
 
 ntrials <- 10 # 1000 is more realistic
 housing_type_threshold <- 0.9
@@ -431,7 +332,8 @@ from birth to the day histoplasmosis was first noted are accounted for.
 The columns in the matrix represent the \Sexpr{ntrials} trials being used to
 estimate the distributions of percent corral, percent gang, and percent single.
 
-\item \label{ht:percent} Use all of the values in an individual column from the matrix created
+\item \label{ht:percent} Use all of the values in an individual column from the
+matrix created
 in \ref{ht:matrix} to calculate the percent corral, percent gang, and percent 
 single.
 
