@@ -164,7 +164,6 @@ affected_housing_df <- add_location_type_percents(affected_df,
                                                   threshold_min_percent)
 ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df,
                                               threshold_min_percent)
-
 #merged_df <- merge(daily_df, df, by = "id")
 affected_df_to_be_melted <- subset(affected_housing_df, select = c("id", "age", "sex", "days_gang", 
                                          "days_corral", "days_single"))
@@ -173,39 +172,49 @@ ctrl_df_to_be_melted <- subset(ctrl_housing_df, select = c("id", "age", "sex", "
                                          "days_corral", "days_single"))
 melt_ctrl_df <- melt(ctrl_df_to_be_melted, id = c("id", "sex", "age"))
 
+percent_affected_animals_ever_in_corral <-  100.0 * 
+  length(melt_affected_df$value[melt_affected_df$value > 0 &  
+                                  melt_affected_df$variable == "days_corral"]) / 
+  length(melt_affected_df$value[melt_affected_df$variable == "days_corral"])
 
-percent_affected_animals_ever_in_corral <- 
-  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
-                         melt_affected_df$variable == 'days_corral']) / 
-  length(melt_affected_df$value[melt_affected_df$variable == 'days_corral'])
-percent_affected_animals_ever_in_gang <- 
-  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
-                         melt_affected_df$variable == 'days_gang']) / 
-  length(melt_affected_df$value[melt_affected_df$variable == 'days_gang'])
-percent_affected_animals_ever_single <-
-  100.0 * length(melt_affected_df$value[melt_affected_df$value > 0 & 
-                         melt_affected_df$variable == 'days_single']) / 
-  length(melt_affected_df$value[melt_affected_df$variable == 'days_single'])
-
-percent_ctrl_animals_ever_in_corral <- 
-  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
-                         melt_ctrl_df$variable == 'days_corral']) / 
-  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_corral'])
-percent_ctrl_animals_ever_in_gang <- 
-  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
-                         melt_ctrl_df$variable == 'days_gang']) / 
-  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_gang'])
-percent_ctrl_animals_ever_single <-
-  100.0 * length(melt_ctrl_df$value[melt_ctrl_df$value > 0 & 
-                         melt_ctrl_df$variable == 'days_single']) / 
-  length(melt_ctrl_df$value[melt_ctrl_df$variable == 'days_single'])
-
+get_days_housing <- function(housing_days_df, housing_days, equal) {
+  if (equal) {
+    sum(housing_days_df$value[housing_days_df$variable == housing_days])
+  } else {
+    sum(housing_days_df$value[housing_days_df$variable != housing_days])
+  }
+}
+affected_days_in_corral <- get_days_housing(melt_affected_df, "days_corral",
+                                            equal = TRUE)
+affected_days_not_in_corral <- get_days_housing(melt_affected_df, "days_corral",
+                                            equal = FALSE)
+ctrl_days_in_corral <- get_days_housing(melt_ctrl_df, "days_corral",
+                                            equal = TRUE)
+ctrl_days_not_in_corral <- get_days_housing(melt_ctrl_df, "days_corral",
+                                            equal = FALSE)
+corral_affected_vs_unaffected_m <-  matrix(c(affected_days_in_corral,
+                        affected_days_not_in_corral,
+                        ctrl_days_in_corral,
+                        ctrl_days_not_in_corral), nrow = 2)
+corral_affected_vs_unaffected_chisq <- 
+  chisq.test(x = corral_affected_vs_unaffected_m)
+alpha <- 0.01
+corral_affected_vs_unaffected_rr <- 
+  calc_relative_risk(corral_affected_vs_unaffected_m, alpha = alpha)
+corral_affected_vs_unaffected_chisq
+corral_affected_vs_unaffected_m
+corral_affected_vs_unaffected_rr
 
 ```
 One of the sources of histoplasmois infection is soil, which makes housing in 
 the corral a potential risk factor. However, there were 
 `r round(100.0 - percent_affected_animals_ever_in_corral, 0)` percent
 of the affected animals that had never been in the corral.
+The data using age matched controls also says that animals that are affected 
+spent fewer days of life in a corral.
+Having a reduced relative risk (`r signif(corral_affected_vs_unaffected_rr, 2)`)
+of being in a corral on any one day of their life.
+
 
 ```{r roundup-animals, cache = TRUE}
 roundup_animals_affected_df <- get_roundup_animals(conn, X_affected)
