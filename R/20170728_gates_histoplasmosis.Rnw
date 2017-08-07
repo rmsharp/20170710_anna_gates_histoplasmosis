@@ -78,6 +78,15 @@ make_knitr_header(
   author_str = "Data Science Group")
 
 @
+<<set_options, echo = FALSE, include = FALSE>>=
+options(continue = " ")
+options(width = 60)
+opts_chunk$set(autodep = TRUE)
+opts_chunk$set(concordance = TRUE)
+opts_chunk$set(keep.source = TRUE, eps = FALSE)
+opts_chunk$set(echo = FALSE, cache = FALSE, include = FALSE, tidy = FALSE)
+
+@
 
 \maketitle
 \section*{Purpose}
@@ -127,15 +136,6 @@ has moved cases from the end of the year to the beginning of the year.
 I do not know the origin of these data and dates and cannot speculate 
 further.
 
-<<set_options, echo = FALSE, include = FALSE>>=
-options(continue = " ")
-options(width = 60)
-opts_chunk$set(autodep = TRUE)
-opts_chunk$set(concordance = TRUE)
-opts_chunk$set(keep.source = TRUE, eps = FALSE)
-opts_chunk$set(echo = FALSE, cache = FALSE, include = FALSE, tidy = FALSE)
-
-@
 \subsection{Demographic Information}
 There were \Sexpr{nrow(original_df)} of those, 
 \Sexpr{nrow(affected_housing_df[affected_housing_df$total_percent > 90, ])} 
