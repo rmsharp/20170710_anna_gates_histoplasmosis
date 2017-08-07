@@ -138,6 +138,25 @@ affected_df5 <- affected_df
 affected_df5[!affected_df5$id %in% affected_df4$id, ]
 
 ```
+The age and sex matched controls found were well matched with 
+`r sum(as.integer(table(ctrl_df$day_diff))[as.integer(names(table(ctrl_df$day_diff))) <= 7])`
+controls being born within a week of their paired affected animal and 
+`r sum(as.integer(table(ctrl_df$day_diff))[as.integer(names(table(ctrl_df$day_diff))) <= 20])`
+controls being born within 20 days of their paired affected animal. 
+The Tukey five number statistic for the distribution in age differences where
+the number of days in age different is divided by the total age at the time
+is `r signif(fivenum(100.0 * abs(ctrl_df$day_diff) / ctrl_df$days_alive), 2)`.
+
+Within the controls 
+`r nrow(ctrl_df[abs(ctrl_df$day_diff) / ctrl_df$days_alive >= 0.05, ])` had
+greater than 5 percent age difference,
+`r nrow(ctrl_df[abs(ctrl_df$day_diff) / ctrl_df$days_alive >= 0.1, ])` 
+of these had greater than 10 percent age difference, and 
+`r nrow(ctrl_df[abs(ctrl_df$day_diff) / ctrl_df$days_alive >= 0.15, ])` 
+of these had age diffence greater than 15 percent with and age difference of 
+`r signif(100.0 * abs(ctrl_df[abs(ctrl_df$day_diff) / ctrl_df$days_alive >= 0.15, "day_diff"]) / ctrl_df[abs(ctrl_df$day_diff) / ctrl_df$days_alive >= 0.15, "days_alive"], 2)`
+percent.
+
 This section looks up the location of each affected animal and its control
 for each day of life prior to the diagnosis date and classifies it according
 to one of the `r length(get_housing_types(conn))` housing types 
@@ -156,7 +175,7 @@ The code below uses the daily housing type data to calculate the percent of
 life spent in each housing type. Animals must have at least 
 `r threshold_min_percent` of their housing history on record to be included in 
 the study.
-```{r calculate-housing-type-percents, cache = TRUE}
+```{r add-housing-type-percents, cache = TRUE}
 
 ## Percent of life in corral - logistic regression. 
 affected_housing_df <- add_location_type_percents(affected_df, 
@@ -164,16 +183,21 @@ affected_housing_df <- add_location_type_percents(affected_df,
                                                   threshold_min_percent)
 ctrl_housing_df <- add_location_type_percents(ctrl_df, daily_ctrl_df,
                                               threshold_min_percent)
-#merged_df <- merge(daily_df, df, by = "id")
-affected_df_to_be_melted <- subset(affected_housing_df, select = c("id", "age", "sex", "days_gang", 
-                                         "days_corral", "days_single"))
+```
+```{r calculate-housing-type-percents, cache = TRUE}
+affected_df_to_be_melted <- 
+  subset(affected_housing_df, select = c("id", "age", "sex", "days_gang", 
+                                         "days_corral", "days_single",
+                                         "days_other"))
 melt_affected_df <- melt(affected_df_to_be_melted, id = c("id", "sex", "age"))
-ctrl_df_to_be_melted <- subset(ctrl_housing_df, select = c("id", "age", "sex", "days_gang", 
-                                         "days_corral", "days_single"))
+ctrl_df_to_be_melted <- 
+  subset(ctrl_housing_df, select = c("id", "age", "sex", "days_gang", 
+                                     "days_corral", "days_single",
+                                     "days_other"))
 melt_ctrl_df <- melt(ctrl_df_to_be_melted, id = c("id", "sex", "age"))
 
-percent_affected_animals_ever_in_corral <-  100.0 * 
-  length(melt_affected_df$value[melt_affected_df$value > 0 &  
+percent_affected_animals_ever_in_corral <-  
+  100.0 *  length(melt_affected_df$value[melt_affected_df$value > 0 &  
                                   melt_affected_df$variable == "days_corral"]) / 
   length(melt_affected_df$value[melt_affected_df$variable == "days_corral"])
 
@@ -193,8 +217,8 @@ ctrl_days_in_corral <- get_days_housing(melt_ctrl_df, "days_corral",
 ctrl_days_not_in_corral <- get_days_housing(melt_ctrl_df, "days_corral",
                                             equal = FALSE)
 corral_affected_vs_unaffected_m <-  matrix(c(affected_days_in_corral,
-                        affected_days_not_in_corral,
                         ctrl_days_in_corral,
+                        affected_days_not_in_corral,
                         ctrl_days_not_in_corral), nrow = 2)
 corral_affected_vs_unaffected_chisq <- 
   chisq.test(x = corral_affected_vs_unaffected_m)
@@ -206,15 +230,21 @@ corral_affected_vs_unaffected_m
 corral_affected_vs_unaffected_rr
 
 ```
-One of the sources of histoplasmois infection is soil, which makes housing in 
+One of the sources of histoplasmosis infection is soil, which makes housing in 
 the corral a potential risk factor. However, there were 
 `r round(100.0 - percent_affected_animals_ever_in_corral, 0)` percent
 of the affected animals that had never been in the corral.
-The data using age matched controls also says that animals that are affected 
+The data using `r nrow(ctrl_df)` age matched controls also says that animals 
+that are affected 
 spent fewer days of life in a corral.
-Having a reduced relative risk (`r signif(corral_affected_vs_unaffected_rr, 2)`)
-of being in a corral on any one day of their life.
-
+This resulted in animals in the corral had a reduced relative risk 
+(`r signif(corral_affected_vs_unaffected_rr$RR, 3)`)
+of being diagnosed with histoplasmosis.
+ with a 
+`r round((1.0 - corral_affected_vs_unaffected_rr$alpha) * 100.0, 0)` percent 
+confidence interval of 
+`r signif(corral_affected_vs_unaffected_rr$lowervalue, 3)` -- 
+`r signif(corral_affected_vs_unaffected_rr$uppervalue, 3)`.
 
 ```{r roundup-animals, cache = TRUE}
 roundup_animals_affected_df <- get_roundup_animals(conn, X_affected)
@@ -293,7 +323,7 @@ sex_affected_vs_unaffected_rr
 The relative risk of a female versus a male of being diagnosed as having 
 histoplasmosis is `r round(sex_affected_vs_unaffected_rr$RR, 2)` with a 
 `r round((1.0 - sex_affected_vs_unaffected_rr$alpha) * 100.0, 0)` percent 
-confidence of 
+confidence interval of 
 `r signif(sex_affected_vs_unaffected_rr$lowervalue, 3)` -- 
 `r signif(sex_affected_vs_unaffected_rr$uppervalue, 3)`.
 
